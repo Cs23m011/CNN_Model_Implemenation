@@ -14,11 +14,11 @@ import torch
 import os
 #import albumentations as A
 from CNN_activations import Activation_Function
-
+ # Initialize the CNN model parameters
 class Lightning_CNN(L.LightningModule):
     def __init__(self,layers,kernel_size,pool_kernel,pool_stride,dense_layer_size,batch_normalization,drop_out,a_fun,optimizer,dense_layer_output,learning_rate):
         super().__init__()
-        self.batch_normalization=batch_normalization
+        self.batch_normalization=batch_normalization    # Define the convolutional layers
         self.drop_out=drop_out
         self.optimizer=optimizer
         act_object=Activation_Function()
@@ -40,11 +40,11 @@ class Lightning_CNN(L.LightningModule):
         self.conv5 = nn.Conv2d(layers[3],layers[4], kernel_size=kernel_size[4], padding=1)
         self.b5=nn.BatchNorm2d(layers[4])
         self.pool5 = nn.MaxPool2d(kernel_size=pool_kernel[4], stride=pool_stride[4])
-        self.dropout = nn.Dropout(p=drop_out)
-        self.fc1 = nn.Linear(dense_layer_size, self.dense_layer_output)
-        self.fc2 = nn.Linear(self.dense_layer_output, 10)
+        self.dropout = nn.Dropout(p=drop_out)     # Define dropout layer
+        self.fc1 = nn.Linear(dense_layer_size, self.dense_layer_output)   # Define fully connected layers
+        self.fc2 = nn.Linear(self.dense_layer_output, 10)    # 10 output classes
     def forward(self,x):
-        if self.batch_normalization==True:
+        if self.batch_normalization==True:      # Forward pass through the model depend on batch normalization
             x=self.pool1(self.act_fun(self.b1(self.conv1(x))))
             x=self.pool2(self.act_fun(self.b2(self.conv2(x))))
             x=self.pool3(self.act_fun(self.b3(self.conv3(x))))
@@ -57,14 +57,14 @@ class Lightning_CNN(L.LightningModule):
             x=self.pool4(self.act_fun(self.conv4(x)))
             x=self.pool5(self.act_fun(self.conv5(x)))
 
-        x=self.dropout(x)
+        x=self.dropout(x)    #applied dropout
         x=torch.flatten(x,1)
         x=self.dropout(x)
         x=self.act_fun(self.fc1(x))
         x=self.fc2(x)
         return x
     def training_step(self, batch, batch_idx):
-        inputs,labels=batch
+        inputs,labels=batch      # Perform a training step
         output=self(inputs)
         _,preds = torch.max(output, dim=1)
         loss=F.cross_entropy(output,labels)
@@ -74,7 +74,7 @@ class Lightning_CNN(L.LightningModule):
 
         return loss
     def configure_optimizers(self):
-        if self.optimizer=='adam':
+        if self.optimizer=='adam':    # Configure optimizer
             optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
             return optimizer
         if self.optimizer=='nadam':
@@ -85,12 +85,12 @@ class Lightning_CNN(L.LightningModule):
             return optimizer
 
     def validation_step(self,batch,batch_idx):
-        x, y = batch
+        x, y = batch       # Perform a validation step
         y_pred = self.forward(x)
         val_loss = F.cross_entropy(y_pred, y)
 
         # Compute validation accuracy
-        _, predicted = torch.max(y_pred, 1)
+        _, predicted = torch.max(y_pred, 1)   # Compute validation accuracy
         val_acc = torch.sum(predicted == y).item() / y.size(0)
 
         self.log('val_loss', val_loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
@@ -99,12 +99,12 @@ class Lightning_CNN(L.LightningModule):
         return val_loss
 
 
-    def test_step(self, batch, batch_idx):
+    def test_step(self, batch, batch_idx):    # Perform a test step
         x,y=batch
         pred=self(x)
         loss=F.cross_entropy(pred,y)
         _, predicted = torch.max(pred, 1)
-        accuracy = torch.sum(predicted == y).item() / y.size(0)
+        accuracy = torch.sum(predicted == y).item() / y.size(0)   # Perform a test accuracy
         #print(predicted,accuracy)
         self.log("test_loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
         self.log("test_accuracy", accuracy, on_step=False, on_epoch=True, prog_bar=True, logger=True)
