@@ -3,7 +3,7 @@ please install the dependencies before running the program other wise it may giv
 ```
 pip install requirement.txt
 
-python train.py
+python trainpartb.py
 ```
 My code is very much flexible to add in command line arguments . I am adding the list of possible argument below for your reference.Please try to run this on local PC or from command promt by ensuring all the libraries in requirements.txt are already installed in your system. Because in google colab this might give problem .
 python train_partb.py -p path to the folder where data reside. For example C:\Users\USER\Downloads\nature_12K\inaturalist_12K\train this where my train data reside then you just given till 
