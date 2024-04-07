@@ -14,13 +14,14 @@ import torch.nn.functional as F
 import torch
 #from albumentations.pytorch.transforms import ToTensorV2
 import wandb
-
+# Define a LightningModule class for pretrained CNN
 class lightning_pretrained_CNN(L.LightningModule):
     def __init__(self,model_name,unfreeze_layers,optimizer,learning_rate):
         super().__init__()
         self.learning_rate=learning_rate
         self.optimizer=optimizer
         self.model_name=model_name
+        # Load pre-trained model based on provided model_name
         if self.model_name=='ResNet50':
             self.model=models.resnet50(pretrained=True)
             #print('hi')
@@ -29,18 +30,18 @@ class lightning_pretrained_CNN(L.LightningModule):
         if self.model_name=='InceptionV3':
             self.model=models.inception_v3(pretrained=True,transform_input=True)
         freeze_index=0
-        for param in self.model.parameters():
+        for param in self.model.parameters():      # Freeze layers except for the last few layers specified by unfreeze_layers
             if freeze_index< (len(list(self.model.parameters())) - (unfreeze_layers + 2)):
                 param.requires_grad = False
             else:
                 break
             freeze_index=freeze_index+1
         num_feature=self.model.fc.in_features
-        self.model.fc=nn.Linear(num_feature,10)
-    def forward(self, x):
+        self.model.fc=nn.Linear(num_feature,10)       # Modify the fully connected layer to adapt to the number of classes to 10 class classification
+    def forward(self, x):       # Forward pass of the model
         return self.model(x)
 
-    def training_step(self, batch, batch_idx):
+    def training_step(self, batch, batch_idx):    # Training step
         inputs,labels=batch
         output=self.forward(inputs)
         #print(type(output.logits))
@@ -48,17 +49,17 @@ class lightning_pretrained_CNN(L.LightningModule):
         #print(output.logits)
         if self.model_name=='InceptionV3':
             _,preds = torch.max(output.logits, dim=1)
-            loss=F.cross_entropy(output.logits,labels)
+            loss=F.cross_entropy(output.logits,labels)   # Calculate loss
         #train_acc = torch.mean(preds == labels)
         #print(pred.shape)
-            self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+            self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)   # Log training loss
         else:
             _,preds = torch.max(output, dim=1)
             loss=F.cross_entropy(output,labels)
             self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
 
         return loss
-    def configure_optimizers(self):
+    def configure_optimizers(self):       # Configure optimizer based on arguments
         if self.optimizer=='adam':
             optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
             return optimizer
@@ -69,15 +70,15 @@ class lightning_pretrained_CNN(L.LightningModule):
             optimizer = torch.optim.SGD(self.parameters(), lr=self.learning_rate)
             return optimizer
 
-    def validation_step(self,batch,batch_idx):
+    def validation_step(self,batch,batch_idx):    # Validation step
         x, y = batch
         y_pred = self.forward(x)
-        val_loss = F.cross_entropy(y_pred, y)
+        val_loss = F.cross_entropy(y_pred, y)        # Calculate validation loss
 
         # Compute validation accuracy
         _, predicted = torch.max(y_pred, 1)
         val_acc = torch.sum(predicted == y).item() / y.size(0)
-
+        # Log validation loss and accuracy
         self.log('val_loss', val_loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
         self.log('val_acc', val_acc, on_step=False, on_epoch=True, prog_bar=True, logger=True)
 
@@ -87,10 +88,10 @@ class lightning_pretrained_CNN(L.LightningModule):
     def test_step(self, batch, batch_idx):
         x,y=batch
         pred=self.forward(x)
-        loss=F.cross_entropy(pred,y)
+        loss=F.cross_entropy(pred,y)    # Calculate test loss
         _, predicted = torch.max(pred.data, 1)
         accuracy = torch.sum(predicted == y).item() / y.size(0)
-        #print(predicted,accuracy)
-        self.log("test_loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        #print(predicted,accuracy)      # Calculate test accuracy
+        self.log("test_loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)     # Log test loss and accuracy
         self.log("test_accuracy", accuracy, on_step=False, on_epoch=True, prog_bar=True, logger=True)
         return {"test_loss": loss}
