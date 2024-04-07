@@ -1,6 +1,7 @@
 #pip install pytorch-lightning
 
 #pip install wandb
+                                                               # Import necessary libraries
 import pytorch_lightning as L
 from torchvision import transforms, models,datasets
 from pytorch_lightning.loggers import WandbLogger
@@ -31,9 +32,9 @@ def save_images_with_labels(images, true_labels, predicted_labels,label_class, o
         filename = os.path.join(output_dir, f"image_{i}.png")
         plt.savefig(filename, bbox_inches='tight', pad_inches=0)
         plt.show()
-def main(args):
+def main(args):     # Main function
     if 5==5:
-        #config=wandb.config
+        #config=wandb.config    #Extracting configuration parameters from arguments
         #wandb.run.name = 'bs-'+str(config.batch_size)+'-lr-'+ str(config.learning_rate)+'-ep-'+str(config.epochs)+ '-op-'+str(config.optimizer)+ '-dls-'+str(config.dense_layer_size)+ '-act-'+str(config.activation)+'-do-'+str(config.dropout)+'-bn-'+str(config.batch_normalization)+'-cs-'+','.join(str(x) for x in config.conv_attributes_channels)+'-ck'+','.join(str(x) for x in config.conv_attributes_kernel_size)+'-pk-'+','.join(str(x) for x in config.pool_attributes_kernel_size)+'-ps-'+','.join(str(x) for x in config.pool_attributes_stride)
         number_of_filter=[[256,128,64,32,16],[32,64,32,64,32],[32,32,32,32,32],[16,32,64,128,256],[64,64,64,64,64]]
         layers=number_of_filter[args.number_of_filter_per_layer]
@@ -51,14 +52,14 @@ def main(args):
         dense_layer_output=args.hidden_size
         epoch=args.epochs
         learning_rate=args.learning_rate
-    #aug_bit=True
-        i_d=224
+    #aug_bit=True              
+        i_d=224        # Calculate input size for fully connected layer
         D=0
         for i in range(5):
             D = (i_d - kernel_size[i])+3
             D = (D - pool_kernel[i])//pool_stride[i] + 1
             i_d = D
-        root_obj=root_dataset(args.path)
+        root_obj=root_dataset(args.path)      # Create datasets and dataloaders
         train_data=root_obj.get_train_data()
         val_data=root_obj.get_val_data()
         dataset1=inaturalist_train(train_data)
@@ -70,8 +71,9 @@ def main(args):
         #wandb_logger = WandbLogger(project='amar_cs23m011', entity='Assignment2-CS6910')
         dataloader=DataLoader(dataset=dataset1,batch_size=b_size,shuffle=True,num_workers=2)
         val_dataloader=DataLoader(dataset=dataset2,batch_size=b_size,shuffle=False,num_workers=2)
+        # Create model
         model=Lightning_CNN(layers,kernel_size,pool_kernel,pool_stride,(D**2)*layers[4],batch_normalization,drop_out,activation_function,optimizer,dense_layer_output,learning_rate)
-        trainer = L.Trainer(accelerator='auto',devices="auto",max_epochs=epoch)
+        trainer = L.Trainer(accelerator='auto',devices="auto",max_epochs=epoch)   # Create trainer and fit model
         trainer.fit(model,dataloader,val_dataloader)
         print_pic=0
         if print_pic:
@@ -101,12 +103,12 @@ def main(args):
             save_images_with_labels(image1, true_label, pred_label,label_class,args.path)
                 
         
-        test_dataloader=DataLoader(dataset=dataset3,batch_size=8,shuffle=False,num_workers=1)
+        test_dataloader=DataLoader(dataset=dataset3,batch_size=8,shuffle=False,num_workers=1)     # Test the model
         trainer.test(dataloaders=test_dataloader)
 
 if  __name__ =="__main__":
   
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser()  #taking arguments from command line arguments
     parser.add_argument('-p','--path',type=str,help='provide the path where your data is stored in memory,Read the readme for more description')
     parser.add_argument('-e','--epochs',type=int,default=15,help='Number of epochs to CNN')
     parser.add_argument('-b','--batch_size',type=int,default=16,help='Batch size used to train CNN')
