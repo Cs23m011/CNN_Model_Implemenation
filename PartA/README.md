@@ -23,26 +23,6 @@ My code is very much flexible to add in command line arguments . I am adding the
 
 Few example are shown below to how to give inputs:-
 ```
-python train.py
+python train_cnn.py -p path -e 10 -sz 256 
 ```
-This will run my best model which i get by validation accuracy. after that it will create a log in a project named CS6910-assignment12 by default until user dont specify project name.
-```
-config = {
-        "epochs" : 20,
-        "batch_size": 128,
-        "loss": "cross_entropy",
-        "optimizer": "adam" ,
-        "learning_rate": 0.0001 ,
-        "num_layers": 4 ,
-        "hidden_size": 256,
-        "activation" : "tanh",
-        "weight_init_method" : "He_normal" ,
-        "weight_decay": 0
-
- }
-```
-Now if you want to change the number of layer I just have to execute the following the command.
-```
-python train.py -nhl 5
-```
-this will change the number of layer to 5. Similarly we can use other commands as well.
+this will change the number of nueron in final fully connected layer to 512 from default. Similarly we can use other commands as well.
