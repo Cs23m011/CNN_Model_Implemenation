@@ -18,13 +18,16 @@ import torch
 import wandb
 import torch
 import argparse
+# Importing custom modules
 from Data_manager_partB import root_dataset,inaturalist_train,inaturalist_val,inaturalist_test
 from pretrained_cnn_part_B import lightning_pretrained_CNN 
-wandb.login()
+wandb.login()  # Login to Weights & Biases
 def main(args):
     if 6==6:
         #config=wandb.config
+        # Constructing the run name for the experiment based on provided arguments
         run_name='bs-'+str(args.batch_size)+'-lr-'+ str(args.learning_rate)+'-ep-'+str(args.epochs)+ '-op-'+str(args.optimizer)+'-mn-'+str(args.model_name)+'-ul-'+str(args.unfreeze_layers)
+        # Getting necessary data and initializing datasets
         model_name=args.model_name
         root_obj=root_dataset(args.path)
         train_data=root_obj.get_train_data()
@@ -32,23 +35,24 @@ def main(args):
         dataset1=inaturalist_train(train_data,model_name)
         dataset2=inaturalist_val(val_data,model_name)
         dataset3=inaturalist_test(model_name,args.path)
+        # Extracting other parameters from args
         b_size=args.batch_size
         unfreeze_layers=args.unfreeze_layers
         optimizer=args.optimizer
         epoch=args.epochs
         learning_rate=args.learning_rate
-        wandb.init(project =args.project_name,entity=args.wandb_entity,name=run_name)
+        wandb.init(project =args.project_name,entity=args.wandb_entity,name=run_name)   # Initializing W&B run
         wandb_logger = WandbLogger(project='amar_cs23m011', entity='Assignment2-CS6910')
-        dataloader=DataLoader(dataset=dataset1,batch_size=b_size,shuffle=True,num_workers=2)
+        dataloader=DataLoader(dataset=dataset1,batch_size=b_size,shuffle=True,num_workers=2)  # Initializing dataloaders
         val_dataloader=DataLoader(dataset=dataset2,batch_size=b_size,shuffle=False,num_workers=2)
-        model=lightning_pretrained_CNN(model_name,unfreeze_layers,optimizer,learning_rate)
-        trainer = L.Trainer(accelerator='auto',devices="auto",max_epochs=epoch,logger=wandb_logger)
-        trainer.fit(model,dataloader,val_dataloader)
-        test_dataloader=DataLoader(dataset=dataset3,batch_size=8,shuffle=False,num_workers=1)
+        model=lightning_pretrained_CNN(model_name,unfreeze_layers,optimizer,learning_rate)    # Initializing model
+        trainer = L.Trainer(accelerator='auto',devices="auto",max_epochs=epoch,logger=wandb_logger)   # Initializing PyTorch Lightning Trainer
+        trainer.fit(model,dataloader,val_dataloader)    # Training the model
+        test_dataloader=DataLoader(dataset=dataset3,batch_size=8,shuffle=False,num_workers=1)   # Testing the trained model
         trainer.test(dataloaders=test_dataloader)
         
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser()  #taking commands from command line arguments
     parser.add_argument('-wp','--project_name',type=str,default='Assignment2-CS6910',help='Project name used to track experiments in Weights & Biases dashboard')
     parser.add_argument('-we','--wandb_entity',type=str,default='amar_cs23m011',help='Project name used to track experiments in Weights & Biases dashboard')
     parser.add_argument('-p', '--path', type=str, help='provide the path where your data is stored in memory,Read the readme for more description')
