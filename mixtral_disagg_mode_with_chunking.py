@@ -1,3 +1,10 @@
+# Line 41 currently:
+from QEfficient.utils.constants import MIN_MASKED_ATTENTION_VALUE
+
+# Add immediately after it:
+from QEfficient.customop.ctx_scatter_gather import CtxGatherFunc3D, CtxScatterFunc3D
+# Add after the imports block, before line 44 (QEffMixtralRotaryEmbedding):
+EXPERT_BLOCKING_NUM_NSP = int(os.environ.get("EXPERT_BLOCKING_NUM_NSP", "16"))
 class QEffMixtralSparseMoeBlock(MixtralSparseMoeBlock):
     """
     Decode-optimised MoE block. Uses pre-stacked weight tensors and
