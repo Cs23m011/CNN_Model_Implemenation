@@ -1,3 +1,52 @@
+RuntimeError: Compilation failed!
+Compiler command: ['/opt/qti-aic/exec/qaic-compile', '-aic-hw', '-aic-hw-version=ai100', '-m=test_models/weightfree_from_config-3dcb78cc28296
+cd2/LlamaForCausalLM.onnx', '-retained-state', '-convert-to-fp16', '-mxfp6-matmul', '-aic-num-cores=16', '-sub-functions', '-mdp-load-partiti
+on-config=test_models/weightfree_from_config-3dcb78cc28296cd2/qpc/qpc-cf1539750f9d9468/mdp_ts_4.json', '-network-specialization-config=test_m
+odels/weightfree_from_config-3dcb78cc28296cd2/qpc/qpc-cf1539750f9d9468/specializations.json', '-custom-IO-list-file=test_models/weightfree_fr
+om_config-3dcb78cc28296cd2/qpc/qpc-cf1539750f9d9468/custom_io.yaml', '-aic-binary-dir=test_models/weightfree_from_config-3dcb78cc28296cd2/qpc
+/qpc-cf1539750f9d9468/qpc']        
+Compiler exitcode: 255       
+Compiler stderr:                                                                                                                             
+WARNING: lm_head.weight contains value or values that will underflow after converson to 16-bit floating point values.                        
+Submission timeout: failed to submit const-transform task #630:
+ConstTransformTask<                                                                                                                          
+Name: node_invoke_subgraph_36__0
+Initial Size: 939524096
+Transforms:
+  ExternalData: model.layers.36.mlp.down_proj.weight [151805558784, 152745082880) float<8192 x 28672> isSplat 0                              
+  TypeConversion: float16<8192 x 1 x 28672> retype: 0
+  Transpose: float16<1 x 28672 x 8192> Shuffle: [1, 2, 0]
+  MatMulHMXWeight: float16<1 x 256 x 917504> wtbs: 1 npadded: 8192 kpadded: 28672 n: 8192 k: 28672 isUsedByQuantizedHMX: 0 isBatchedB: 1 isRW
+QFC: 0                             
+  BlockQuantize:  type: uindex8<1 x 256 x 716800> numScales: 28672 mxfpTensorIdx: 15                                                         
+  Slice: uindex8<1 x 64 x 716800> Start: [0, 0, 0] SlicedForSize: 1
+>
+Converting Error to bool: 
+Error message: Task aborted due to prior task failure
+Converting Error to bool: 
+Error message: Task aborted due to prior task failure
+Converting Error to bool: 
+Error message: Task aborted due to prior task failure
+Converting Error to bool: 
+Error message: Task aborted due to prior task failure
+Converting Error to bool: 
+Error message: Task aborted due to prior task failure
+Converting Error to bool: 
+Error message: Task aborted due to prior task failure
+Converting Error to bool: 
+Error message: Task aborted due to prior task failure
+Converting Error to bool: 
+Error message: Task aborted due to prior task failure
+Converting Error to bool: 
+Error message: Task aborted due to prior task failure
+Converting Error to bool: 
+Error message: Task aborted due to prior task failure
+Converting Error to bool: 
+Error message: Task aborted due to prior task failure
+Converting Error to bool: 
+Error message: Task aborted due to prior task failure
+Converting Error to bool: 
+Error message: Task aborted due to prior task failure
 # -----------------------------------------------------------------------------
 #
 # Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
@@ -94,9 +143,8 @@ def _sync_embedded_extdata(onnx_path: Path, weight_spec_path: Path) -> None:
     onnx.save(onnx_model, str(tmp))
     tmp.replace(onnx_path)
 
-
-#model_name = "meta-llama/Llama-3.3-70B-Instruct"
-model_name = "meta-llama/Llama-3.2-1B"
+model_name = "meta-llama/Llama-3.3-70B-Instruct"
+#model_name = "meta-llama/Llama-3.2-1B"
 # model_name = "gpt2"
 # model_name = "hf-internal-testing/tiny-random-LlamaForCausalLM"
 
@@ -119,9 +167,9 @@ runner = ApiRunner(
     full_batch_size=FULL_BATCH_SIZE if CONTINUOUS_BATCHING else None,
 )
 
-with init_empty_weights():
-   meta_model = AutoModelForCausalLM.from_config(config, attn_implementation="eager")
-#meta_model=AutoModelForCausalLM.from_pretrained(model_name,config=config)
+#with init_empty_weights():
+#   meta_model = AutoModelForCausalLM.from_config(config, attn_implementation="eager")
+meta_model=AutoModelForCausalLM.from_pretrained(model_name,config=config)
 
 qeff_model = QEFFAutoModelForCausalLM(
     meta_model,
@@ -136,18 +184,18 @@ onnx_path = Path(
         export_dir=export_dir,
         use_dynamo=True,
         use_onnx_subfunctions=True,
-        use_weight_free_export=True,
+        use_weight_free_export=False,
         offload_pt_weights=False,
     )
 )
 export_elapsed = time.perf_counter() - export_start
-weight_spec_path = resolve_weight_spec_path(onnx_path)
+#weight_spec_path = resolve_weight_spec_path(onnx_path)
 
 print(f"Weight-free export time: {export_elapsed:.3f} sec")
 
 print("Converting checkpoint to FP32 (one-time local materialization) ...")
 fp32_convert_time_start=time.perf_counter();
-convert_checkpoint_to_fp32(onnx_path, weight_spec_path)
+#convert_checkpoint_to_fp32(onnx_path, weight_spec_path)
 fp32_convert_time=time.perf_counter()-fp32_convert_time_start
 print(f"fp32 convert time: {fp32_convert_time:.3f} sec")
 print("Compiling weight-free ONNX ...")
@@ -157,33 +205,33 @@ qpc_path = qeff_model.compile(
     compile_dir=str(onnx_path.parent / "qpc"),
     prefill_seq_len=8,
     ctx_len=32,
-    num_devices=4,
+    use_dynamo=True,
     mxfp6_matmul=True,
     mxint8_kv_cache=True,
-    use_dynamo=True,
+    num_devices=4,
     use_onnx_subfunctions=True,
-    use_weight_free_export=True,
+    use_weight_free_export=False,
 )
 compile_time = time.perf_counter()-compile_start
 print(f"compile time: {compile_time:.3f} sec")
 print(f"QPC: {qpc_path}")
 
-session = ort.InferenceSession(str(onnx_path))
-ort_inputs = load_weight_free_ort_inputs(weight_spec_path, runner.input_handler.prepare_ort_inputs())
-ort_outputs = runner.run_ort_session(ort_inputs, session)
-ort_outputs = runner.input_handler.update_ort_outputs(ort_outputs)
+# session = ort.InferenceSession(str(onnx_path))
+# ort_inputs = load_weight_free_ort_inputs(weight_spec_path, runner.input_handler.prepare_ort_inputs())
+# ort_outputs = runner.run_ort_session(ort_inputs, session)
+# ort_outputs = runner.input_handler.update_ort_outputs(ort_outputs)
 
-generated_ids = []
-for _ in range(1, runner.gen_len):
-    generated_ids.append(ort_outputs["logits"].argmax(-1).reshape(-1, 1))
-    ort_inputs = runner.input_handler.update_ort_inputs(ort_inputs, ort_outputs)
-    ort_inputs = load_weight_free_ort_inputs(weight_spec_path, ort_inputs)
-    ort_outputs = runner.run_ort_session(ort_inputs, session)
-    ort_outputs = runner.input_handler.update_ort_outputs(ort_outputs)
+# generated_ids = []
+# for _ in range(1, runner.gen_len):
+#     generated_ids.append(ort_outputs["logits"].argmax(-1).reshape(-1, 1))
+#     ort_inputs = runner.input_handler.update_ort_inputs(ort_inputs, ort_outputs)
+#     ort_inputs = load_weight_free_ort_inputs(weight_spec_path, ort_inputs)
+#     ort_outputs = runner.run_ort_session(ort_inputs, session)
+#     ort_outputs = runner.input_handler.update_ort_outputs(ort_outputs)
 
-generated_ids.append(ort_outputs["logits"].argmax(-1).reshape(-1, 1))
-generated_ids = np.concatenate(generated_ids, axis=1)
-generated_text = runner.input_handler.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
+# generated_ids.append(ort_outputs["logits"].argmax(-1).reshape(-1, 1))
+# generated_ids = np.concatenate(generated_ids, axis=1)
+# generated_text = runner.input_handler.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
 
 print("Running QPC generate ...")
 try:
@@ -207,96 +255,3 @@ except RuntimeError as exc:
 print(f"Weight-free ONNX: {onnx_path}")
 print(f"Weight spec: {weight_spec_path}")
 #print(generated_text)
-[Warning]: While compiling, we found certain side effects happened in the model.forward. Here are the list of potential sources you can double check: ["L['kwargs']['past_key_value'].layers[15]"]
-[torch.onnx] Obtain model graph for `QEffLlamaForCausalLM([...]` with `torch.export.export(..., strict=False)`... ✅
-[torch.onnx] Run decompositions...
-[Warning]: `isinstance(treespec, LeafSpec)` is deprecated, use `isinstance(treespec, TreeSpec) and treespec.is_leaf()` instead.
-[torch.onnx] Run decompositions... ✅
-[torch.onnx] Translate the graph into ONNX...
-[torch.onnx] Translate the graph into ONNX... ✅
-[Warning]: # The axis name: batch_size will not be used, since it shares the same shape constraints with another axis: batch_size.
-[Warning]: # The axis name: seq_len will not be used, since it shares the same shape constraints with another axis: seq_len.
-[Warning]: # The axis name: ctx_len will not be used, since it shares the same shape constraints with another axis: ctx_len.
-[Warning]: `resume_download` is deprecated and will be removed in version 1.0.0. Downloads always resume when possible. If you want to force a new download, use `force_download=True`.
-Fetching 7 files: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████| 7/7 [00:00<00:00, 21229.30it/s]
-Weight-free export time: 43.588 sec
-Converting checkpoint to FP32 (one-time local materialization) ...
-  model.safetensors  (torch.bfloat16)  →  model.safetensors  (float32)
-fp32 convert time: 10.800 sec
-Compiling weight-free ONNX ...
-['/opt/qti-aic/exec/qaic-compile', '-aic-hw', '-aic-hw-version=ai100', '-m=test_models/weightfree_from_config-a971b506b22894dc/LlamaForCausalLM.onnx', '-retained-state', '-convert-to-fp16', '-mxfp6-matmul', '-aic-num-cores=16', '-sub-functions', '-mdp-load-partition-config=test_models/weightfree_from_config-a971b506b22894dc/qpc/qpc-1a6780f10b6dead7/mdp_ts_4.json', '-network-specialization-config=test_models/weightfree_from_config-a971b506b22894dc/qpc/qpc-1a6780f10b6dead7/specializations.json', '-custom-IO-list-file=test_models/weightfree_from_config-a971b506b22894dc/qpc/qpc-1a6780f10b6dead7/custom_io.yaml', '-aic-binary-dir=test_models/weightfree_from_config-a971b506b22894dc/qpc/qpc-1a6780f10b6dead7/qpc']
-compile time: 55.258 sec
-QPC: test_models/weightfree_from_config-a971b506b22894dc/qpc/qpc-1a6780f10b6dead7/qpc
-Running QPC generate ...
-
-Prompt : My name is
-Completion : Kelsey and I am a 2016 graduate of the University of Wisconsin-Madison. I am currently input= ['My name is']
-output= [[' Kelsey and I am a 2016 graduate of the University of Wisconsin-Madison. I am currently a graduate锦锦锦锦锦锦锦锦']]
-Average Prefill time a.k.a TTFT is= 0.01 sec        
-Decode is= 210.77 tokens/sec        
-Total is= 195.37 tokens/sec        
-Total (E2E) inference time is= 0.12 sec
-Average Prefill time a.k.a TTFT is= 0.01 sec        
-Decode is= 210.77 tokens/sec        
-Total is= 195.37 tokens/sec        
-Total (E2E) inference time is= 0.12 sec
-[[  735 93567   323   358  1097   264   220   679    23 19560   315   279
-   3907   315 21073  5364   329  3416    13   358  1097  5131   264 19560]]
-[' Kelsey and I am a 2018 graduate of the University of Wisconsin-Madison. I am currently a graduate']
-[[   735  93567    323    358   1097    264    220    679     21  19560
-     315    279   3907    315  21073   5364    329   3416     13    358
-    1097   5131    264  19560 127999 127999 127999 127999 127999 127999
-  127999 127999]]
-[' Kelsey and I am a 2016 graduate of the University of Wisconsin-Madison. I am currently a graduate锦锦锦锦锦锦锦锦']
-Weight-free ONNX: test_models/weightfree_from_config-a971b506b22894dc/LlamaForCausalLM.onnx
-Weight spec: test_models/weightfree_from_config-a971b506b22894dc/weight_spec.json
-
-   "rope_type": "llama3"                                                                                                                           [123/426]
-  },                                                                                                                                                         
-  "rope_theta": 500000.0,                                                                                                                                    
-  "tie_word_embeddings": false,                                                                                                                              
-  "transformers_version": "4.57.3",                                                                                                                          
-  "use_cache": true,                                                                                                                                         
-  "vocab_size": 128256                                                                                                                                       
-}                                                                                                                                                            
-                                                                                                                                                             
-[Warning]: The subfunction feature is experimental. Please note that using compile consecutively with and without subfunction may produce inconsistent result
-s.                                                                                                                                                           
-Weight-free export time: 0.010 sec                                                                                                                           
-Converting checkpoint to FP32 (one-time local materialization) ...                                                                                           
-[Warning]: `resume_download` is deprecated and will be removed in version 1.0.0. Downloads always resume when possible. If you want to force a new download, 
-use `force_download=True`.                                                                                                                                   
-Fetching 37 files: 100%|██████████████████████████████████████████████████████████████████████████████████| 37/37 [00:00<00:00, 11337.61it/s]                
-Reusing existing local FP32 safetensors.                                                                                                                     
-fp32 convert time: 2.772 sec                                                                                                                                 
-Compiling weight-free ONNX ...                                                                                                                               
-['/opt/qti-aic/exec/qaic-compile', '-aic-hw', '-aic-hw-version=ai100', '-m=test_models/weightfree_from_config-fc018ea23beb8e08/LlamaForCausalLM.onnx', '-reta
-ined-state', '-convert-to-fp16', '-mxfp6-matmul', '-aic-num-cores=16', '-sub-functions', '-mdp-load-partition-config=test_models/weightfree_from_config-fc018
-ea23beb8e08/qpc/qpc-7284f87c6a052831/mdp_ts_4.json', '-network-specialization-config=test_models/weightfree_from_config-fc018ea23beb8e08/qpc/qpc-7284f87c6a05
-2831/specializations.json', '-custom-IO-list-file=test_models/weightfree_from_config-fc018ea23beb8e08/qpc/qpc-7284f87c6a052831/custom_io.yaml', '-aic-binary-
-dir=test_models/weightfree_from_config-fc018ea23beb8e08/qpc/qpc-7284f87c6a052831/qpc']                                                                       
-compile time: 1390.574 sec                                                                                                                                   
-QPC: test_models/weightfree_from_config-fc018ea23beb8e08/qpc/qpc-7284f87c6a052831/qpc                                                                        
-Running QPC generate ...                                                                                                                                     
-                                                                                                                                                             
-Prompt : My name is                                                                                                                                          
-Completion :input= ['My name is']                                                                                                                            
-output= [['!!*^#(-<<(<�!#"(#!!*O*#}']]                                                                                                                       
-Average Prefill time a.k.a TTFT is= 0.15 sec                                                                                                                 
-Decode is= 6.99 tokens/sec                                                                                                                                   
-Total is= 6.68 tokens/sec                                                                                                                                    
-Total (E2E) inference time is= 3.44 sec                                                                                                                      
-Average Prefill time a.k.a TTFT is= 0.15 sec                                                                                                                 
-Decode is= 6.99 tokens/sec                                                                                                                                   
-Total is= 6.68 tokens/sec                                                                                                                                    
-Total (E2E) inference time is= 3.44 sec                                                                                                                      
-[[35266    11   323   358  1097   264 10195   520   279  3907   315 14972                                                                                    
-  21630 25027 19241   323 15506    13   358  1097 25429   922 12434 12437]]                                                                                  
-[' Emily, and I am a senior at the University of Michigan studying Environmental Studies and Spanish. I am passionate about environmental justice']          
-[[     0      0      9     61      2      7     12     27     27      7                                                                                      
-      27     94      0      2      1      7      2      0      0      9                                                                                      
-      46      9      2     92 128004 128004 128004 128004 128004 128004                                                                                      
-  128004 128004]]                                                                                                                                            
-['!!*^#(-<<(<�!#"(#!!*O*#}']                                                                                                                                 
-Weight-free ONNX: test_models/weightfree_from_config-fc018ea23beb8e08/LlamaForCausalLM.onnx                                                                  
-Weight spec: test_models/weightfree_from_config-fc018ea23beb8e08/weight_spec.json            
