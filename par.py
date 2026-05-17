@@ -1,425 +1,667 @@
-# -----------------------------------------------------------------------------
-#
-# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-# SPDX-License-Identifier: BSD-3-Clause
-#
-# -----------------------------------------------------------------------------
+`torch_dtype` is deprecated! Use `dtype` instead!
+[93m[Warning]: The subfunction feature is experimental. Please note that using compile consecutively with and without subfunction may produce inconsistent results.[0m
+W0518 02:39:58.009000 990247 torch/onnx/_internal/exporter/_registration.py:107] torchvision is not installed. Skipping torchvision::nms
+W0518 02:39:58.010000 990247 torch/onnx/_internal/exporter/_registration.py:107] torchvision is not installed. Skipping torchvision::roi_align
+W0518 02:39:58.010000 990247 torch/onnx/_internal/exporter/_registration.py:107] torchvision is not installed. Skipping torchvision::roi_pool
+E0518 02:39:59.050000 990247 torch/export/_trace.py:1323] always_classified is unsupported.
+E0518 02:39:59.050000 990247 torch/export/_trace.py:1323] always_classified is unsupported.
+E0518 02:39:59.866000 990247 torch/export/_trace.py:1323] always_classified is unsupported.
+E0518 02:39:59.866000 990247 torch/export/_trace.py:1323] always_classified is unsupported.
+[31;20mERROR - QEfficient.base.modeling_qeff - ONNX export or transforms failed: Failed to export the model with torch.export. [96mThis is step 1/3[0m of exporting the model to ONNX. Next steps:
+- Modify the model code for `torch.export.export` to succeed. Refer to https://pytorch.org/docs/stable/generated/exportdb/index.html for more information.
+- Debug `torch.export.export` and submit a PR to PyTorch.
+- Create an issue in the PyTorch GitHub repository against the [96m*torch.export*[0m component and attach the full error stack as well as reproduction scripts.
 
-"""PyTorch Qwen3 model."""
+## Exception summary
 
-from typing import List, Optional, Tuple, Type, Union
+<class 'torch._dynamo.exc.TorchRuntimeError'>: RuntimeError when making fake tensor call
+  Explanation: Dynamo failed to run FX node with fake tensors: call_function <built-in function mul>(*(FakeTensor(..., device='meta', size=(s40, 32, s1, 128),
+               grad_fn=<TransposeBackward0>), FakeTensor(..., size=(s40, 1, s1, 128))), **{}): got RuntimeError('Tensor on device cpu is not on the expected device meta!')
+  Hint: Your code may result in an error when running in eager. Please double check that your code doesn't contain a similar error when actually running eager/uncompiled. You can do this by removing the `torch.compile` call, or by using `torch.compiler.set_stance("force_eager")`. 
 
-import torch
-import torch.utils.checkpoint
-from torch import nn
-from transformers.cache_utils import Cache
-from transformers.modeling_outputs import (
-    BaseModelOutputWithPast,
-    CausalLMOutputWithPast,
-)
-from transformers.models.qwen3.modeling_qwen3 import (
-    Qwen3Attention,
-    Qwen3Config,
-    Qwen3DecoderLayer,
-    Qwen3ForCausalLM,
-    Qwen3Model,
-    Qwen3RotaryEmbedding,
-    repeat_kv,
-    rotate_half,
-)
+  Developer debug context: 
 
-from QEfficient.blocking.attention_blocking import (
-    AttentionBlockingConfig,
-    BlockingMode,
-    generic_blocked_attention_interface,
-    past_key_value_update,
-)
-from QEfficient.transformers.cache_utils import QEffDynamicCache
-from QEfficient.transformers.modeling_attn_mask_utils import _create_causal_mask
-from QEfficient.utils.constants import MIN_MASKED_ATTENTION_VALUE
+ For more details about this graph break, please visit: https://meta-pytorch.github.io/compile-graph-break-site/gb/gb4315.html
 
-
-#  Can be replaced with llama/modeling_llama.py::QEffLlamaRotaryEmbedding but keeping it following transformers ideology
-class QEffQwen3RotaryEmbedding(Qwen3RotaryEmbedding):
-    """
-    Copied from LlamaForCausalLM: https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/modeling_llama.py
-    The only differences are:
-    - Add static sin/cos computations.
-    """
-
-    def __init__(self, config: Qwen3Config, device=None):
-        super().__init__(config=config)
-        # Build here to make `torch.jit.trace` work.
-        self._set_cos_sin_cache(
-            seq_len=self.original_max_seq_len, device=self.inv_freq.device, dtype=torch.get_default_dtype()
-        )
-
-    def _set_cos_sin_cache(self, seq_len, device, dtype):
-        self.max_seq_len_cached = seq_len
-        t = torch.arange(self.max_seq_len_cached, device=device, dtype=torch.int64).type_as(self.inv_freq)
-
-        freqs = torch.outer(t, self.inv_freq)
-
-        emb = torch.cat((freqs, freqs), dim=-1)
-        self.register_buffer("cos_cached", emb.cos().to(dtype), persistent=False)
-        self.register_buffer("sin_cached", emb.sin().to(dtype), persistent=False)
-
-
-def qeff_apply_rotary_pos_emb(q, k, cos, sin):
-    """Applies Rotary Position Embedding with Multimodal Sections to the query and key tensors (https://qwenlm.github.io/blog/qwen2-vl/).
-
-    Explanation:
-        Multimodal 3D rotary position embedding is an extension to 1D rotary position embedding. The input embedding
-        sequence contains vision (images / videos) embedding and text embedding or just contains text embedding. For
-        vision embedding part, we apply rotary position embedding on temporal, height and width dimension seperately.
-        Here we split the channel dimension to 3 chunks for the temporal, height and width rotary position embedding.
-        For text embedding part, we just apply 1D rotary position embedding. The three rotary position index (temporal,
-        height and width) of text embedding is always the same, so the text embedding rotary position embedding has no
-        difference with modern LLMs.
-
-    Args:
-        q (`torch.Tensor`): The query tensor.
-        k (`torch.Tensor`): The key tensor.
-        cos (`torch.Tensor`): The cosine part of the rotary embedding.
-        sin (`torch.Tensor`): The sine part of the rotary embedding.
-    Returns:
-        `tuple(torch.Tensor)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
-    """
-
+from user code:
+   File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/invoke_subgraph.py", line 266, in _invoke_subgraph_placeholder_wrapper
+    return invoke_subgraph_placeholder(func, *args, **kwargs)
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_export/non_strict_utils.py", line 1152, in __torch_function__
+    return func(*args, **kwargs)
+  File "/home/amarshar/weightfree_exp/QEfficient/transformers/models/qwen3/modeling_qwen3.py", line 239, in forward
+    hidden_states, _ = self.self_attn(
+  File "/home/amarshar/weightfree_exp/QEfficient/transformers/models/qwen3/modeling_qwen3.py", line 148, in forward
+    query_states, key_states = qeff_apply_rotary_pos_emb(query_states, key_states, cos_cached, sin_cached)
+  File "/home/amarshar/weightfree_exp/QEfficient/transformers/models/qwen3/modeling_qwen3.py", line 89, in qeff_apply_rotary_pos_emb
     q_embed = (q * cos) + (rotate_half(q) * sin)
-    k_embed = (k * cos) + (rotate_half(k) * sin)
 
-    return q_embed.to(q.dtype), k_embed.to(k.dtype)
-
-
-def eager_attention_forward(
-    module: nn.Module,
-    query: torch.Tensor,
-    key: torch.Tensor,
-    value: torch.Tensor,
-    attention_mask: Optional[torch.Tensor],
-    scaling: float,
-    **kwargs,
-):
-    key_states = repeat_kv(key, module.num_key_value_groups)
-    value_states = repeat_kv(value, module.num_key_value_groups)
-
-    attn_weights = torch.matmul(query, key_states.transpose(2, 3)) * scaling
-    if attention_mask is not None:
-        attn_weights = torch.where(
-            attention_mask, torch.tensor(MIN_MASKED_ATTENTION_VALUE, dtype=module.config.torch_dtype), attn_weights
-        )
-
-    attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query.dtype)
-    attn_output = torch.matmul(attn_weights, value_states)
-    attn_output = attn_output.transpose(1, 2).contiguous()
-
-    return attn_output, attn_weights
+Set TORCHDYNAMO_VERBOSE=1 for the internal stack trace (please do this especially if you're reporting a bug to PyTorch). For even more developer context, set TORCH_LOGS="+dynamo"
 
 
-class QEffQwen3Attention(Qwen3Attention):
-    """
-    Copied from Qwen3Attention: https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen3/modeling_qwen3.py
-    The only differences are:
-    - add new args position idx for the cache_kwargs for kv retention
-    """
+(Refer to the full stack trace above for more information.)  (modeling_qeff.py:534)[0m
+Qwen3Config {
+  "architectures": [
+    "Qwen3ForCausalLM"
+  ],
+  "attention_bias": false,
+  "attention_dropout": 0.0,
+  "bos_token_id": 151643,
+  "dtype": "float32",
+  "eos_token_id": 151645,
+  "head_dim": 128,
+  "hidden_act": "silu",
+  "hidden_size": 4096,
+  "initializer_range": 0.02,
+  "intermediate_size": 12288,
+  "layer_types": [
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention",
+    "full_attention"
+  ],
+  "max_position_embeddings": 40960,
+  "max_window_layers": 36,
+  "model_type": "qwen3",
+  "num_attention_heads": 32,
+  "num_hidden_layers": 36,
+  "num_key_value_heads": 8,
+  "rms_norm_eps": 1e-06,
+  "rope_scaling": null,
+  "rope_theta": 1000000,
+  "sliding_window": null,
+  "tie_word_embeddings": false,
+  "transformers_version": "4.57.3",
+  "use_cache": true,
+  "use_sliding_window": false,
+  "vocab_size": 151936
+}
 
-    def forward(
-        self,
-        hidden_states: torch.Tensor,
-        attention_mask: Optional[torch.Tensor],
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[Cache] = None,
-        comp_ctx_lengths: Optional[torch.LongTensor] = None,
-        batch_index: Optional[torch.LongTensor] = None,
-        cache_position: Optional[torch.LongTensor] = None,
-        cos_cached: Optional[torch.Tensor] = None,
-        sin_cached: Optional[torch.Tensor] = None,
-        **kwargs,
-    ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
-        input_shape = hidden_states.shape[:-1]
-        hidden_shape = (*input_shape, -1, self.head_dim)
+[torch.onnx] Obtain model graph for `QEffQwen3ForCausalLM([...]` with `torch.export.export(..., strict=False)`...
+[torch.onnx] Obtain model graph for `QEffQwen3ForCausalLM([...]` with `torch.export.export(..., strict=False)`... ❌
+[torch.onnx] Obtain model graph for `QEffQwen3ForCausalLM([...]` with `torch.export.export(..., strict=True)`...
+[torch.onnx] Obtain model graph for `QEffQwen3ForCausalLM([...]` with `torch.export.export(..., strict=True)`... ❌
+Traceback (most recent call last):
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/onnx/_internal/exporter/_capture_strategies.py", line 121, in __call__
+    exported_program = self._capture(model, args, kwargs, dynamic_shapes)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/onnx/_internal/exporter/_capture_strategies.py", line 219, in _capture
+    return torch.export.export(
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/export/__init__.py", line 205, in export
+    raise e
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/export/__init__.py", line 171, in export
+    return _export(
+           ^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 1344, in wrapper
+    raise e
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 1310, in wrapper
+    ep = fn(*args, **kwargs)
+         ^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/export/exported_program.py", line 124, in wrapper
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_utils_internal.py", line 96, in wrapper_function
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 2512, in _export
+    ep = _export_for_training(
+         ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 1344, in wrapper
+    raise e
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 1310, in wrapper
+    ep = fn(*args, **kwargs)
+         ^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/export/exported_program.py", line 124, in wrapper
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 2300, in _export_for_training
+    export_artifact = export_func(
+                      ^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 2229, in _non_strict_export
+    aten_export_artifact = _to_aten_func(
+                           ^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 2006, in _export_to_aten_ir_make_fx
+    gm, graph_signature = transform(_make_fx_helper)(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 2136, in _aot_export_non_strict
+    gm, sig = aot_export(stack, wrapped_mod, args, kwargs=kwargs, **flags)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 1914, in _make_fx_helper
+    gm = make_fx(
+         ^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 2965, in wrapped
+    return make_fx_tracer.trace(f, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 2867, in trace
+    return self._trace_inner(f, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 2828, in _trace_inner
+    t = dispatch_trace(
+        ^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_compile.py", line 54, in inner
+    return disable_fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/eval_frame.py", line 1297, in _fn
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 1673, in dispatch_trace
+    graph = tracer.trace(root, concrete_args)  # type: ignore[arg-type]
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 2402, in trace
+    res = super().trace(root, concrete_args)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/eval_frame.py", line 1297, in _fn
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 912, in trace
+    (self.create_arg(fn(*args)),),
+                     ^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 1743, in wrapped
+    out = f(*tensors)  # type:ignore[call-arg]
+          ^^^^^^^^^^^
+  File "<string>", line 1, in <lambda>
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 1798, in wrapped_fn
+    return tuple(flat_fn(*args))
+                 ^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_functorch/_aot_autograd/utils.py", line 192, in flat_fn
+    tree_out = fn(*args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_functorch/_aot_autograd/graph_capture_wrappers.py", line 1536, in functional_call
+    out = mod(*args[params_len:], **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 886, in module_call_wrapper
+    return self.call_module(mod, forward, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 2491, in call_module
+    return Tracer.call_module(self, m, forward, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 577, in call_module
+    ret_val = forward(*args, **kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 879, in forward
+    return _orig_module_call(mod, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 2120, in forward
+    tree_out = mod(*args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 886, in module_call_wrapper
+    return self.call_module(mod, forward, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 2491, in call_module
+    return Tracer.call_module(self, m, forward, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 577, in call_module
+    ret_val = forward(*args, **kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 879, in forward
+    return _orig_module_call(mod, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/QEfficient/transformers/models/qwen3/modeling_qwen3.py", line 402, in forward
+    outputs = self.model(
+              ^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 886, in module_call_wrapper
+    return self.call_module(mod, forward, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 2491, in call_module
+    return Tracer.call_module(self, m, forward, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 577, in call_module
+    ret_val = forward(*args, **kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 879, in forward
+    return _orig_module_call(mod, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/QEfficient/transformers/models/qwen3/modeling_qwen3.py", line 336, in forward
+    hidden_states = decoder_layer(
+                    ^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/transformers/modeling_layers.py", line 94, in __call__
+    return super().__call__(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 886, in module_call_wrapper
+    return self.call_module(mod, forward, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 2491, in call_module
+    return Tracer.call_module(self, m, forward, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 577, in call_module
+    ret_val = forward(*args, **kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 879, in forward
+    return _orig_module_call(mod, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/invoke_subgraph.py", line 307, in inner
+    return invoke_subgraph_placeholder(inner_func, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/invoke_subgraph.py", line 270, in invoke_subgraph_placeholder
+    return _hop_compile_and_call(
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/utils.py", line 112, in _hop_compile_and_call
+    return torch.compile(fn, backend=backend, fullgraph=True)(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/eval_frame.py", line 1047, in compile_wrapper
+    result = fn(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py", line 2474, in __call__
+    result = self._torchdynamo_orig_backend(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py", line 736, in __call__
+    result = _compile(
+             ^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py", line 1961, in _compile
+    guarded_code, tracer_output = compile_inner(code, one_graph, hooks)
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_utils_internal.py", line 96, in wrapper_function
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py", line 1571, in compile_inner
+    result = _compile_inner(code, one_graph, hooks)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py", line 1630, in _compile_inner
+    dynamo_output = compile_frame(
+                    ^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py", line 1478, in compile_frame
+    bytecode, tracer_output = transform_code_object(code, transform)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/bytecode_transformation.py", line 1626, in transform_code_object
+    tracer_output = transformations(instructions, code_options)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py", line 1450, in transform
+    tracer_output = trace_frame(
+                    ^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py", line 343, in _fn
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py", line 911, in trace_frame
+    run_tracer()
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py", line 892, in run_tracer
+    tracer.run()
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 1813, in run
+    while self.step():
+          ^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 1480, in step
+    self.dispatch_table[inst.opcode](self, inst)
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 1017, in wrapper
+    return inner_fn(self, inst)
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 2851, in CALL_FUNCTION_EX
+    self.call_function(fn, argsvars.items, kwargsvars)
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 1381, in call_function
+    self.push(fn.call_function(self, args, kwargs))  # type: ignore[arg-type]
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/variables/lazy.py", line 294, in realize_and_forward
+    return getattr(self.realize(), name)(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/variables/higher_order_ops.py", line 2081, in wrapped_call_function
+    return original_call_function(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/variables/higher_order_ops.py", line 2081, in wrapped_call_function
+    return original_call_function(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/variables/higher_order_ops.py", line 2161, in call_function
+    return dispatch_torch_function(tx, self, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/variables/torch_function.py", line 557, in dispatch_torch_function
+    res = tx.symbolic_torch_function_state.call_torch_function_mode(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/variables/torch_function.py", line 324, in call_torch_function_mode
+    return cur_mode.call_torch_function(tx, fn, types, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/variables/torch_function.py", line 193, in call_torch_function
+    return call_torch_function(
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/variables/torch_function.py", line 511, in call_torch_function
+    return torch_function_var.call_function(tx, tf_args, {})
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/variables/functions.py", line 1669, in call_function
+    return super().call_function(tx, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/variables/functions.py", line 810, in call_function
+    return super().call_function(tx, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/variables/functions.py", line 489, in call_function
+    return tx.inline_user_function_return(self, [*self.self_args(), *args], kwargs)  # type: ignore[attr-defined]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 1408, in inline_user_function_return
+    return InliningInstructionTranslator.inline_call(self, fn, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 5241, in inline_call
+    return tracer.inline_call_()
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 5462, in inline_call_
+    self.run()
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 1813, in run
+    while self.step():
+          ^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 1480, in step
+    self.dispatch_table[inst.opcode](self, inst)
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 1017, in wrapper
+    return inner_fn(self, inst)
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 2851, in CALL_FUNCTION_EX
+    self.call_function(fn, argsvars.items, kwargsvars)
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 1381, in call_function
+    self.push(fn.call_function(self, args, kwargs))  # type: ignore[arg-type]
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/variables/higher_order_ops.py", line 2081, in wrapped_call_function
+    return original_call_function(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/variables/higher_order_ops.py", line 2081, in wrapped_call_function
+    return original_call_function(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/variables/higher_order_ops.py", line 2163, in call_function
+    return self._call_function(tx, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/variables/invoke_subgraph.py", line 1257, in _call_function
+    ) = self.create_wrapped_node(tx, fn_var, fn_args_vt, kwargs, self._HOP_NAME)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/variables/higher_order_ops.py", line 3341, in create_wrapped_node
+    ) = speculate_subgraph_with_auto_output_flattening(
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/variables/higher_order_ops.py", line 1676, in speculate_subgraph_with_auto_output_flattening
+    output = trace_hop_function_with_auto_output_flattening(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/variables/higher_order_ops.py", line 1438, in trace_hop_function_with_auto_output_flattening
+    output = f.call_function(tx, args, sub_kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/variables/lazy.py", line 294, in realize_and_forward
+    return getattr(self.realize(), name)(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/variables/functions.py", line 810, in call_function
+    return super().call_function(tx, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/variables/functions.py", line 489, in call_function
+    return tx.inline_user_function_return(self, [*self.self_args(), *args], kwargs)  # type: ignore[attr-defined]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 1408, in inline_user_function_return
+    return InliningInstructionTranslator.inline_call(self, fn, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 5241, in inline_call
+    return tracer.inline_call_()
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 5462, in inline_call_
+    self.run()
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 1813, in run
+    while self.step():
+          ^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 1480, in step
+    self.dispatch_table[inst.opcode](self, inst)
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 1017, in wrapper
+    return inner_fn(self, inst)
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 2851, in CALL_FUNCTION_EX
+    self.call_function(fn, argsvars.items, kwargsvars)
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 1381, in call_function
+    self.push(fn.call_function(self, args, kwargs))  # type: ignore[arg-type]
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/variables/lazy.py", line 294, in realize_and_forward
+    return getattr(self.realize(), name)(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/variables/nn_module.py", line 1152, in call_function
+    return variables.UserFunctionVariable(fn, source=source).call_function(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/variables/functions.py", line 810, in call_function
+    return super().call_function(tx, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/variables/functions.py", line 489, in call_function
+    return tx.inline_user_function_return(self, [*self.self_args(), *args], kwargs)  # type: ignore[attr-defined]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 1408, in inline_user_function_return
+    return InliningInstructionTranslator.inline_call(self, fn, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 5241, in inline_call
+    return tracer.inline_call_()
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 5462, in inline_call_
+    self.run()
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 1813, in run
+    while self.step():
+          ^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 1480, in step
+    self.dispatch_table[inst.opcode](self, inst)
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 1017, in wrapper
+    return inner_fn(self, inst)
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 4171, in CALL
+    self._call(inst)
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 4162, in _call
+    self.call_function(fn, args, kwargs)
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 1381, in call_function
+    self.push(fn.call_function(self, args, kwargs))  # type: ignore[arg-type]
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/variables/lazy.py", line 294, in realize_and_forward
+    return getattr(self.realize(), name)(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/variables/functions.py", line 810, in call_function
+    return super().call_function(tx, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/variables/functions.py", line 489, in call_function
+    return tx.inline_user_function_return(self, [*self.self_args(), *args], kwargs)  # type: ignore[attr-defined]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 1408, in inline_user_function_return
+    return InliningInstructionTranslator.inline_call(self, fn, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 5241, in inline_call
+    return tracer.inline_call_()
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 5462, in inline_call_
+    self.run()
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 1813, in run
+    while self.step():
+          ^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 1480, in step
+    self.dispatch_table[inst.opcode](self, inst)
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 4103, in BINARY_OP
+    return _binary_op_lookup[inst.arg](self, inst)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/symbolic_convert.py", line 486, in impl
+    self.push(fn_var.call_function(self, self.popn(nargs), {}))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/variables/builtin.py", line 1497, in call_function
+    return handler(tx, args, kwargs)  # type: ignore[return-value]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/variables/builtin.py", line 1456, in _handle_insert_op_in_graph
+    return wrap_fx_proxy(tx, proxy)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/variables/builder.py", line 3090, in wrap_fx_proxy
+    return wrap_fx_proxy_cls(target_cls=TensorVariable, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/variables/builder.py", line 3165, in wrap_fx_proxy_cls
+    out: VTTypeAlias = _wrap_fx_proxy(
+                       ^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/variables/builder.py", line 3289, in _wrap_fx_proxy
+    example_value = get_fake_value(proxy.node, tx, allow_non_graph_fake=True)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/utils.py", line 3751, in get_fake_value
+    return _get_fake_value_impl(node, tx, allow_non_graph_fake)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/utils.py", line 3942, in _get_fake_value_impl
+    _wrap_graph_break_with_torch_runtime_err(
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/utils.py", line 3740, in _wrap_graph_break_with_torch_runtime_err
+    raise exc.with_traceback(e.__traceback__) from None
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/utils.py", line 3737, in _wrap_graph_break_with_torch_runtime_err
+    gb_fn()
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/utils.py", line 3943, in <lambda>
+    lambda: unimplemented(
+            ^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_dynamo/exc.py", line 653, in unimplemented
+    raise Unsupported(
+torch._dynamo.exc.TorchRuntimeError: RuntimeError when making fake tensor call
+  Explanation: Dynamo failed to run FX node with fake tensors: call_function <built-in function mul>(*(FakeTensor(..., device='meta', size=(s40, 32, s1, 128),
+               grad_fn=<TransposeBackward0>), FakeTensor(..., size=(s40, 1, s1, 128))), **{}): got RuntimeError('Tensor on device cpu is not on the expected device meta!')
+  Hint: Your code may result in an error when running in eager. Please double check that your code doesn't contain a similar error when actually running eager/uncompiled. You can do this by removing the `torch.compile` call, or by using `torch.compiler.set_stance("force_eager")`. 
 
-        query_states = self.q_norm(self.q_proj(hidden_states).view(hidden_shape)).transpose(1, 2)
-        key_states = self.k_norm(self.k_proj(hidden_states).view(hidden_shape)).transpose(1, 2)
-        value_states = self.v_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+  Developer debug context: 
 
-        # kv_seq_len = past_key_value.get_seq_length(self.layer_idx, cache_position)
-        query_states, key_states = qeff_apply_rotary_pos_emb(query_states, key_states, cos_cached, sin_cached)
+ For more details about this graph break, please visit: https://meta-pytorch.github.io/compile-graph-break-site/gb/gb4315.html
 
-        past_seen_tokens = past_key_values.get_seq_length(self.layer_idx) if past_key_values is not None else 0
-        blocking_config = getattr(self, "attn_blocking_config", AttentionBlockingConfig())
-        use_blocking = blocking_config is not None and (blocking_config.mode != BlockingMode.NONE)
-        if use_blocking:
-            attn_output, attn_weights = generic_blocked_attention_interface(
-                module=self,
-                query=query_states,
-                key=key_states,
-                value=value_states,
-                attention_mask=attention_mask,
-                scaling=self.scaling,
-                layer_idx=self.layer_idx,
-                past_key_value=past_key_values,
-                blocking_config=blocking_config,
-                comp_ctx_length=comp_ctx_lengths,
-                batch_index=batch_index,
-                position_ids=position_ids,
-                past_seen_tokens=past_seen_tokens,
-            )
-        else:
-            key_states, value_states, _ = past_key_value_update(
-                module=self,
-                key=key_states,
-                value=value_states,
-                attention_mask=attention_mask,
-                past_key_value=past_key_values,
-                comp_ctx_lengths=comp_ctx_lengths,
-                batch_index=batch_index,
-                position_ids=position_ids,
-            )
-            attn_output, attn_weights = eager_attention_forward(
-                self,
-                query_states,
-                key_states,
-                value_states,
-                attention_mask,
-                scaling=self.scaling,
-                **kwargs,
-            )
+from user code:
+   File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/invoke_subgraph.py", line 266, in _invoke_subgraph_placeholder_wrapper
+    return invoke_subgraph_placeholder(func, *args, **kwargs)
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_export/non_strict_utils.py", line 1152, in __torch_function__
+    return func(*args, **kwargs)
+  File "/home/amarshar/weightfree_exp/QEfficient/transformers/models/qwen3/modeling_qwen3.py", line 239, in forward
+    hidden_states, _ = self.self_attn(
+  File "/home/amarshar/weightfree_exp/QEfficient/transformers/models/qwen3/modeling_qwen3.py", line 148, in forward
+    query_states, key_states = qeff_apply_rotary_pos_emb(query_states, key_states, cos_cached, sin_cached)
+  File "/home/amarshar/weightfree_exp/QEfficient/transformers/models/qwen3/modeling_qwen3.py", line 89, in qeff_apply_rotary_pos_emb
+    q_embed = (q * cos) + (rotate_half(q) * sin)
 
-        attn_output = attn_output.reshape(*input_shape, -1).contiguous()
-        attn_output = self.o_proj(attn_output)
-        return attn_output, attn_weights
+Set TORCHDYNAMO_VERBOSE=1 for the internal stack trace (please do this especially if you're reporting a bug to PyTorch). For even more developer context, set TORCH_LOGS="+dynamo"
 
 
-class QEffQwen3DecoderLayer(Qwen3DecoderLayer):
-    """
-    Copied from Qwen3ForCausalLM: https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen3/modeling_qwen3.py
-    The only differences are:
-    - add new args position idx for the cache_kwargs for kv retention
-    - update the hidden_states, and fix for onnx model
-    """
+The above exception was the direct cause of the following exception:
 
-    @torch.compiler.nested_compile_region
-    def forward(
-        self,
-        hidden_states: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_value: Optional[Cache] = None,
-        comp_ctx_lengths: Optional[torch.LongTensor] = None,
-        batch_index: Optional[torch.LongTensor] = None,
-        use_cache: Optional[bool] = False,
-        cache_position: Optional[torch.LongTensor] = None,
-        sin_cached=None,
-        cos_cached=None,
-        **kwargs,
-    ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
-        """
-        Args:
-            hidden_states (`torch.FloatTensor`): input to the layer of shape `(batch, seq_len, embed_dim)`
-            attention_mask (`torch.FloatTensor`, *optional*): attention mask of size
-                `(batch, sequence_length)` where padding elements are indicated by 0.
-            use_cache (`bool`, *optional*):
-                If set to `True`, `past_key_values` key value states are returned and can be used to speed up decoding
-                (see `past_key_values`).
-            past_key_value (`Tuple(torch.FloatTensor)`, *optional*): cached past key and value projection states
-            cache_position (`torch.LongTensor` of shape `(sequence_length)`, *optional*):
-                Indices depicting the position of the input sequence tokens in the sequence.
-            kwargs (`dict`, *optional*):
-                Arbitrary kwargs to be ignored, used for FSDP and other methods that injects code
-                into the model
-        """
+Traceback (most recent call last):
+  File "/home/amarshar/weightfree_exp/QEfficient/utils/export_utils.py", line 209, in wrapper
+    onnx_path = func(self, *args, **kwargs)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/QEfficient/base/modeling_qeff.py", line 535, in _export
+    raise e
+  File "/home/amarshar/weightfree_exp/QEfficient/base/modeling_qeff.py", line 433, in _export
+    ) = export_weight_free_onnx(
+        ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/QEfficient/exporter/weight_free.py", line 249, in export_weight_free_onnx
+    onnx_program = torch.onnx.export(
+                   ^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/onnx/__init__.py", line 291, in export
+    return _compat.export_compat(
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/onnx/_internal/exporter/_compat.py", line 161, in export_compat
+    onnx_program = _core.export(
+                   ^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/onnx/_internal/exporter/_flags.py", line 27, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/onnx/_internal/exporter/_core.py", line 1456, in export
+    raise _errors.TorchExportError(
+torch.onnx._internal.exporter._errors.TorchExportError: Failed to export the model with torch.export. [96mThis is step 1/3[0m of exporting the model to ONNX. Next steps:
+- Modify the model code for `torch.export.export` to succeed. Refer to https://pytorch.org/docs/stable/generated/exportdb/index.html for more information.
+- Debug `torch.export.export` and submit a PR to PyTorch.
+- Create an issue in the PyTorch GitHub repository against the [96m*torch.export*[0m component and attach the full error stack as well as reproduction scripts.
 
-        residual = hidden_states
+## Exception summary
 
-        hidden_states = self.input_layernorm(hidden_states)
+<class 'torch._dynamo.exc.TorchRuntimeError'>: RuntimeError when making fake tensor call
+  Explanation: Dynamo failed to run FX node with fake tensors: call_function <built-in function mul>(*(FakeTensor(..., device='meta', size=(s40, 32, s1, 128),
+               grad_fn=<TransposeBackward0>), FakeTensor(..., size=(s40, 1, s1, 128))), **{}): got RuntimeError('Tensor on device cpu is not on the expected device meta!')
+  Hint: Your code may result in an error when running in eager. Please double check that your code doesn't contain a similar error when actually running eager/uncompiled. You can do this by removing the `torch.compile` call, or by using `torch.compiler.set_stance("force_eager")`. 
 
-        # Self Attention
-        hidden_states, _ = self.self_attn(
-            hidden_states=hidden_states,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            past_key_values=past_key_value,
-            comp_ctx_lengths=comp_ctx_lengths,
-            batch_index=batch_index,
-            use_cache=use_cache,
-            cache_position=cache_position,
-            sin_cached=sin_cached,
-            cos_cached=cos_cached,
-            **kwargs,
-        )
-        hidden_states = residual + hidden_states
+  Developer debug context: 
 
-        # Fully Connected
-        residual = hidden_states
-        hidden_states = self.post_attention_layernorm(hidden_states)
-        hidden_states = self.mlp(hidden_states)
-        hidden_states = residual + hidden_states
+ For more details about this graph break, please visit: https://meta-pytorch.github.io/compile-graph-break-site/gb/gb4315.html
 
-        return hidden_states
+from user code:
+   File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/invoke_subgraph.py", line 266, in _invoke_subgraph_placeholder_wrapper
+    return invoke_subgraph_placeholder(func, *args, **kwargs)
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_export/non_strict_utils.py", line 1152, in __torch_function__
+    return func(*args, **kwargs)
+  File "/home/amarshar/weightfree_exp/QEfficient/transformers/models/qwen3/modeling_qwen3.py", line 239, in forward
+    hidden_states, _ = self.self_attn(
+  File "/home/amarshar/weightfree_exp/QEfficient/transformers/models/qwen3/modeling_qwen3.py", line 148, in forward
+    query_states, key_states = qeff_apply_rotary_pos_emb(query_states, key_states, cos_cached, sin_cached)
+  File "/home/amarshar/weightfree_exp/QEfficient/transformers/models/qwen3/modeling_qwen3.py", line 89, in qeff_apply_rotary_pos_emb
+    q_embed = (q * cos) + (rotate_half(q) * sin)
+
+Set TORCHDYNAMO_VERBOSE=1 for the internal stack trace (please do this especially if you're reporting a bug to PyTorch). For even more developer context, set TORCH_LOGS="+dynamo"
 
 
-class QEffQwen3Model(Qwen3Model):
-    """
-    Copied from Qwen3Model: https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen3/modeling_qwen3.py
-    The only differences are:
-    - add new args position idx for the cache_kwargs for kv retention
-    - update causal attention mask
-    """
+(Refer to the full stack trace above for more information.)
 
-    def __qeff_init__(self):
-        self.rotary_emb = QEffQwen3RotaryEmbedding(config=self.config)
-        self.register_buffer(
-            "sin_cached", self.rotary_emb.sin_cached * self.rotary_emb.attention_scaling, persistent=False
-        )
-        self.register_buffer(
-            "cos_cached", self.rotary_emb.cos_cached * self.rotary_emb.attention_scaling, persistent=False
-        )
+The above exception was the direct cause of the following exception:
 
-    def forward(
-        self,
-        input_ids: torch.LongTensor = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[Cache] = None,
-        comp_ctx_lengths: Optional[torch.LongTensor] = None,
-        batch_index: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        use_cache: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        cache_position: Optional[torch.LongTensor] = None,
-        **kwargs,
-    ) -> Union[Tuple, BaseModelOutputWithPast]:
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
-        )
-        use_cache = use_cache if use_cache is not None else self.config.use_cache
+Traceback (most recent call last):
+  File "/home/amarshar/weightfree_exp/examples/text_generation/weight_free_export_from_config.py", line 135, in <module>
+    qeff_model.export(
+  File "/home/amarshar/weightfree_exp/QEfficient/transformers/models/modeling_auto.py", line 3435, in export
+    return self._export(
+           ^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree_exp/QEfficient/utils/export_utils.py", line 212, in wrapper
+    raise RuntimeError(
+RuntimeError: Export failed with use_dynamo=True and use_onnx_subfunctions=True while nested compile regions were enabled for repeated-subgraph extraction (TorchExportError: Failed to export the model with torch.export. [96mThis is step 1/3[0m of exporting the model to ONNX. Next steps:
+- Modify the model code for `torch.export.export` to succeed. Refer to https://pytorch.org/docs/stable/generated/exportdb/index.html for more information.
+- Debug `torch.export.export` and submit a PR to PyTorch.
+- Create an issue in the PyTorch GitHub repository against the [96m*torch.export*[0m component and attach the full error stack as well as reproduction scripts.
 
-        if (input_ids is None) ^ (inputs_embeds is not None):
-            raise ValueError(
-                "You cannot specify both input_ids and inputs_embeds at the same time, and must specify either one"
-            )
+## Exception summary
 
-        return_legacy_cache = False
-        if use_cache and not isinstance(past_key_values, Cache):
-            return_legacy_cache = True
-            past_key_values = QEffDynamicCache.from_legacy_cache(past_key_values)
+<class 'torch._dynamo.exc.TorchRuntimeError'>: RuntimeError when making fake tensor call
+  Explanation: Dynamo failed to run FX node with fake tensors: call_function <built-in function mul>(*(FakeTensor(..., device='meta', size=(s40, 32, s1, 128),
+               grad_fn=<TransposeBackward0>), FakeTensor(..., size=(s40, 1, s1, 128))), **{}): got RuntimeError('Tensor on device cpu is not on the expected device meta!')
+  Hint: Your code may result in an error when running in eager. Please double check that your code doesn't contain a similar error when actually running eager/uncompiled. You can do this by removing the `torch.compile` call, or by using `torch.compiler.set_stance("force_eager")`. 
 
-        if inputs_embeds is None:
-            inputs_embeds = self.embed_tokens(input_ids)
+  Developer debug context: 
 
-        if cache_position is None:
-            past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
-            cache_position = torch.arange(
-                past_seen_tokens, past_seen_tokens + inputs_embeds.shape[1], device=inputs_embeds.device
-            )
-        if position_ids is None:
-            position_ids = cache_position.unsqueeze(0)
+ For more details about this graph break, please visit: https://meta-pytorch.github.io/compile-graph-break-site/gb/gb4315.html
 
-        target_length = attention_mask.shape[-1] if isinstance(attention_mask, torch.Tensor) else past_seen_tokens
-        causal_mask = _create_causal_mask(
-            position_ids=position_ids, target_length=target_length, sliding_window=self.config.sliding_window
-        )
+from user code:
+   File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/invoke_subgraph.py", line 266, in _invoke_subgraph_placeholder_wrapper
+    return invoke_subgraph_placeholder(func, *args, **kwargs)
+  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/_export/non_strict_utils.py", line 1152, in __torch_function__
+    return func(*args, **kwargs)
+  File "/home/amarshar/weightfree_exp/QEfficient/transformers/models/qwen3/modeling_qwen3.py", line 239, in forward
+    hidden_states, _ = self.self_attn(
+  File "/home/amarshar/weightfree_exp/QEfficient/transformers/models/qwen3/modeling_qwen3.py", line 148, in forward
+    query_states, key_states = qeff_apply_rotary_pos_emb(query_states, key_states, cos_cached, sin_cached)
+  File "/home/amarshar/weightfree_exp/QEfficient/transformers/models/qwen3/modeling_qwen3.py", line 89, in qeff_apply_rotary_pos_emb
+    q_embed = (q * cos) + (rotate_half(q) * sin)
 
-        hidden_states = inputs_embeds
-
-        # decoder layers
-        all_hidden_states = () if output_hidden_states else None
-        sin = self.sin_cached[position_ids].unsqueeze(1)
-        cos = self.cos_cached[position_ids].unsqueeze(1)
-
-        for decoder_layer in self.layers:
-            if output_hidden_states:
-                all_hidden_states += (hidden_states,)
-
-            hidden_states = decoder_layer(
-                hidden_states,
-                attention_mask=causal_mask,
-                position_ids=position_ids,
-                past_key_value=past_key_values,
-                comp_ctx_lengths=comp_ctx_lengths,
-                batch_index=batch_index,
-                use_cache=use_cache,
-                cache_position=cache_position,
-                sin_cached=sin,
-                cos_cached=cos,
-            )
-
-        hidden_states = self.norm(hidden_states)
-
-        # add hidden states from the last decoder layer
-        if output_hidden_states:
-            all_hidden_states += (hidden_states,)
-
-        if return_legacy_cache:
-            past_key_values = past_key_values.to_legacy_cache()
-
-        return BaseModelOutputWithPast(
-            last_hidden_state=hidden_states,
-            past_key_values=past_key_values if use_cache else None,
-            hidden_states=all_hidden_states,
-        )
+Set TORCHDYNAMO_VERBOSE=1 for the internal stack trace (please do this especially if you're reporting a bug to PyTorch). For even more developer context, set TORCH_LOGS="+dynamo"
 
 
-class QEffQwen3ForCausalLM(Qwen3ForCausalLM):
-    """
-    Copied from Qwen3ForCausalLM: https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen3/modeling_qwen3.py
-    The only differences are:
-    - add new args position idx for the cache_kwargs for kv retention
-    - update the hidden_states, and fix for onnx model
-    """
-
-    def get_submodules_for_export(self) -> Type[nn.Module]:
-        """
-        Return the set of class used as the repeated layer across the model for subfunction extraction.
-        Notes:
-            This method should return the *class object* (not an instance).
-            Downstream code can use this to find/build subfunctions for repeated blocks.
-        """
-        return {QEffQwen3DecoderLayer}
-
-    def forward(
-        self,
-        input_ids: torch.LongTensor = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[Union[Cache, List[torch.FloatTensor]]] = None,
-        comp_ctx_lengths: Optional[torch.LongTensor] = None,
-        batch_index: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        use_cache: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        cache_position: Optional[torch.LongTensor] = None,
-        logits_to_keep: Union[int, torch.Tensor] = 0,
-        **kwargs,
-    ) -> Union[Tuple, CausalLMOutputWithPast]:
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
-        )
-
-        # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
-        outputs = self.model(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            past_key_values=past_key_values,
-            comp_ctx_lengths=comp_ctx_lengths,
-            batch_index=batch_index,
-            inputs_embeds=inputs_embeds,
-            use_cache=use_cache,
-            output_hidden_states=output_hidden_states,
-        )
-
-        # Cast to INT32 to avoid issue while running in ONNXRT
-        logit_index = position_ids.to(torch.int32).argmax(1, keepdim=True)
-        hidden_states = outputs.last_hidden_state[torch.arange(position_ids.shape[0]).view(-1, 1), logit_index]
-        logits = self.lm_head(hidden_states).float()
-
-        return CausalLMOutputWithPast(
-            loss=None,
-            logits=logits,
-            past_key_values=outputs.past_key_values,
-            hidden_states=outputs.hidden_states,
-            attentions=outputs.attentions,
-        )
+(Refer to the full stack trace above for more information.)). Retry export with use_onnx_subfunctions=False for this model/runtime.
