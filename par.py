@@ -1,52 +1,3 @@
-RuntimeError: Compilation failed!
-Compiler command: ['/opt/qti-aic/exec/qaic-compile', '-aic-hw', '-aic-hw-version=ai100', '-m=test_models/weightfree_from_config-3dcb78cc28296
-cd2/LlamaForCausalLM.onnx', '-retained-state', '-convert-to-fp16', '-mxfp6-matmul', '-aic-num-cores=16', '-sub-functions', '-mdp-load-partiti
-on-config=test_models/weightfree_from_config-3dcb78cc28296cd2/qpc/qpc-cf1539750f9d9468/mdp_ts_4.json', '-network-specialization-config=test_m
-odels/weightfree_from_config-3dcb78cc28296cd2/qpc/qpc-cf1539750f9d9468/specializations.json', '-custom-IO-list-file=test_models/weightfree_fr
-om_config-3dcb78cc28296cd2/qpc/qpc-cf1539750f9d9468/custom_io.yaml', '-aic-binary-dir=test_models/weightfree_from_config-3dcb78cc28296cd2/qpc
-/qpc-cf1539750f9d9468/qpc']        
-Compiler exitcode: 255       
-Compiler stderr:                                                                                                                             
-WARNING: lm_head.weight contains value or values that will underflow after converson to 16-bit floating point values.                        
-Submission timeout: failed to submit const-transform task #630:
-ConstTransformTask<                                                                                                                          
-Name: node_invoke_subgraph_36__0
-Initial Size: 939524096
-Transforms:
-  ExternalData: model.layers.36.mlp.down_proj.weight [151805558784, 152745082880) float<8192 x 28672> isSplat 0                              
-  TypeConversion: float16<8192 x 1 x 28672> retype: 0
-  Transpose: float16<1 x 28672 x 8192> Shuffle: [1, 2, 0]
-  MatMulHMXWeight: float16<1 x 256 x 917504> wtbs: 1 npadded: 8192 kpadded: 28672 n: 8192 k: 28672 isUsedByQuantizedHMX: 0 isBatchedB: 1 isRW
-QFC: 0                             
-  BlockQuantize:  type: uindex8<1 x 256 x 716800> numScales: 28672 mxfpTensorIdx: 15                                                         
-  Slice: uindex8<1 x 64 x 716800> Start: [0, 0, 0] SlicedForSize: 1
->
-Converting Error to bool: 
-Error message: Task aborted due to prior task failure
-Converting Error to bool: 
-Error message: Task aborted due to prior task failure
-Converting Error to bool: 
-Error message: Task aborted due to prior task failure
-Converting Error to bool: 
-Error message: Task aborted due to prior task failure
-Converting Error to bool: 
-Error message: Task aborted due to prior task failure
-Converting Error to bool: 
-Error message: Task aborted due to prior task failure
-Converting Error to bool: 
-Error message: Task aborted due to prior task failure
-Converting Error to bool: 
-Error message: Task aborted due to prior task failure
-Converting Error to bool: 
-Error message: Task aborted due to prior task failure
-Converting Error to bool: 
-Error message: Task aborted due to prior task failure
-Converting Error to bool: 
-Error message: Task aborted due to prior task failure
-Converting Error to bool: 
-Error message: Task aborted due to prior task failure
-Converting Error to bool: 
-Error message: Task aborted due to prior task failure
 # -----------------------------------------------------------------------------
 #
 # Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
@@ -54,204 +5,421 @@ Error message: Task aborted due to prior task failure
 #
 # -----------------------------------------------------------------------------
 
-import json
-import time
-from pathlib import Path
-import numpy as np
-import onnx
-import onnxruntime as ort
+"""PyTorch Qwen3 model."""
+
+from typing import List, Optional, Tuple, Type, Union
+
 import torch
-from accelerate import init_empty_weights
-from safetensors.torch import load_file, save_file
-from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
-
-from QEfficient.exporter.weight_free import _default_weights_roots ,load_weight_free_ort_inputs
-from QEfficient.exporter.weight_spec import (
-    ExternalDataFile,
-    load_weight_spec,
-    resolve_weight_spec_path,
-    save_weight_spec,
+import torch.utils.checkpoint
+from torch import nn
+from transformers.cache_utils import Cache
+from transformers.modeling_outputs import (
+    BaseModelOutputWithPast,
+    CausalLMOutputWithPast,
 )
-from QEfficient.transformers.models.modeling_auto import QEFFAutoModelForCausalLM
-from QEfficient.utils.run_utils import ApiRunner
+from transformers.models.qwen3.modeling_qwen3 import (
+    Qwen3Attention,
+    Qwen3Config,
+    Qwen3DecoderLayer,
+    Qwen3ForCausalLM,
+    Qwen3Model,
+    Qwen3RotaryEmbedding,
+    repeat_kv,
+    rotate_half,
+)
+
+from QEfficient.blocking.attention_blocking import (
+    AttentionBlockingConfig,
+    BlockingMode,
+    generic_blocked_attention_interface,
+    past_key_value_update,
+)
+from QEfficient.transformers.cache_utils import QEffDynamicCache
+from QEfficient.transformers.modeling_attn_mask_utils import _create_causal_mask
+from QEfficient.utils.constants import MIN_MASKED_ATTENTION_VALUE
 
 
-def convert_checkpoint_to_fp32(onnx_path: Path, weight_spec_path: Path) -> None:
+#  Can be replaced with llama/modeling_llama.py::QEffLlamaRotaryEmbedding but keeping it following transformers ideology
+class QEffQwen3RotaryEmbedding(Qwen3RotaryEmbedding):
     """
-    Load each safetensors checkpoint file, cast all tensors to FP32,
-    save next to the ONNX, and update weight_spec.json to point there.
-
-    This ensures the compiler sees matching dtypes between the ONNX (FLOAT)
-    and the safetensors files (also FLOAT after conversion).
+    Copied from LlamaForCausalLM: https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/modeling_llama.py
+    The only differences are:
+    - Add static sin/cos computations.
     """
-    spec = load_weight_spec(weight_spec_path)
-    export_dir = onnx_path.parent
-    candidate_roots = _default_weights_roots(weight_spec_path, spec)
-    local_files = [
-        ExternalDataFile(
-            path=f"model_{idx:04d}.safetensors" if len(spec.files) > 1 else "model.safetensors",
-            format="safetensors",
+
+    def __init__(self, config: Qwen3Config, device=None):
+        super().__init__(config=config)
+        # Build here to make `torch.jit.trace` work.
+        self._set_cos_sin_cache(
+            seq_len=self.original_max_seq_len, device=self.inv_freq.device, dtype=torch.get_default_dtype()
         )
-        for idx, _ in enumerate(spec.files)
-    ]
 
-    # Reuse previously materialized local safetensors even if a fresh export
-    # rewrote the spec back to the original checkpoint paths.
-    if local_files and all((export_dir / ext_file.path).is_file() for ext_file in local_files):
-        print("Reusing existing local FP32 safetensors.")
-        spec.files = local_files
-        save_weight_spec(weight_spec_path, spec)
-        _sync_embedded_extdata(onnx_path, weight_spec_path)
-        return
+    def _set_cos_sin_cache(self, seq_len, device, dtype):
+        self.max_seq_len_cached = seq_len
+        t = torch.arange(self.max_seq_len_cached, device=device, dtype=torch.int64).type_as(self.inv_freq)
 
-    new_files = []
-    for idx, ext_file in enumerate(spec.files):
-        rel_path = Path(ext_file.path)
-        abs_path = rel_path if rel_path.is_absolute() else None
-        if abs_path is None:
-            for root in candidate_roots:
-                candidate = root / rel_path
-                if candidate.exists():
-                    abs_path = candidate
-                    break
-        if abs_path is None or not abs_path.exists():
-            raise FileNotFoundError(f"Cannot resolve external data file: {ext_file.path}")
+        freqs = torch.outer(t, self.inv_freq)
 
-        tensors = load_file(str(abs_path))
-        fp32_tensors = {k: v.to(torch.float32) for k, v in tensors.items()}
-
-        out_name = f"model_{idx:04d}.safetensors" if len(spec.files) > 1 else "model.safetensors"
-        save_file(fp32_tensors, str(export_dir / out_name))
-        new_files.append(ExternalDataFile(path=out_name, format="safetensors"))
-        print(f"  {abs_path.name}  ({next(iter(tensors.values())).dtype})  →  {out_name}  (float32)")
-
-    spec.files = new_files
-    save_weight_spec(weight_spec_path, spec)
-    _sync_embedded_extdata(onnx_path, weight_spec_path)
+        emb = torch.cat((freqs, freqs), dim=-1)
+        self.register_buffer("cos_cached", emb.cos().to(dtype), persistent=False)
+        self.register_buffer("sin_cached", emb.sin().to(dtype), persistent=False)
 
 
-def _sync_embedded_extdata(onnx_path: Path, weight_spec_path: Path) -> None:
-    # Keep the embedded external-data metadata aligned with weight_spec.json so
-    # compiler and ORT verification resolve the same files.
-    updated_json = json.dumps(json.loads(weight_spec_path.read_text()), separators=(",", ":"), sort_keys=True)
-    onnx_model = onnx.load(str(onnx_path), load_external_data=False)
-    for entry in onnx_model.metadata_props:
-        if entry.key == "com.qti.aisw.extdata":
-            entry.value = updated_json
-            break
-    tmp = onnx_path.with_suffix(onnx_path.suffix + ".tmp")
-    onnx.save(onnx_model, str(tmp))
-    tmp.replace(onnx_path)
+def qeff_apply_rotary_pos_emb(q, k, cos, sin):
+    """Applies Rotary Position Embedding with Multimodal Sections to the query and key tensors (https://qwenlm.github.io/blog/qwen2-vl/).
 
-model_name = "meta-llama/Llama-3.3-70B-Instruct"
-#model_name = "meta-llama/Llama-3.2-1B"
-# model_name = "gpt2"
-# model_name = "hf-internal-testing/tiny-random-LlamaForCausalLM"
+    Explanation:
+        Multimodal 3D rotary position embedding is an extension to 1D rotary position embedding. The input embedding
+        sequence contains vision (images / videos) embedding and text embedding or just contains text embedding. For
+        vision embedding part, we apply rotary position embedding on temporal, height and width dimension seperately.
+        Here we split the channel dimension to 3 chunks for the temporal, height and width rotary position embedding.
+        For text embedding part, we just apply 1D rotary position embedding. The three rotary position index (temporal,
+        height and width) of text embedding is always the same, so the text embedding rotary position embedding has no
+        difference with modern LLMs.
 
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-config = AutoConfig.from_pretrained(model_name)
-# config.num_hidden_layers = 2
-config.torch_dtype = torch.float32
-print(config)
+    Args:
+        q (`torch.Tensor`): The query tensor.
+        k (`torch.Tensor`): The key tensor.
+        cos (`torch.Tensor`): The cosine part of the rotary embedding.
+        sin (`torch.Tensor`): The sine part of the rotary embedding.
+    Returns:
+        `tuple(torch.Tensor)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
+    """
 
-CONTINUOUS_BATCHING = False
-FULL_BATCH_SIZE = 4  # slots in the KV cache; active batch_size stays at 1 here # NOT VERIFIED, WIP
+    q_embed = (q * cos) + (rotate_half(q) * sin)
+    k_embed = (k * cos) + (rotate_half(k) * sin)
 
-runner = ApiRunner(
-    batch_size=1,
-    tokenizer=tokenizer,
-    config=config,
-    prompt=["My name is"],
-    prompt_len=8,
-    ctx_len=32,
-    full_batch_size=FULL_BATCH_SIZE if CONTINUOUS_BATCHING else None,
-)
+    return q_embed.to(q.dtype), k_embed.to(k.dtype)
 
-#with init_empty_weights():
-#   meta_model = AutoModelForCausalLM.from_config(config, attn_implementation="eager")
-meta_model=AutoModelForCausalLM.from_pretrained(model_name,config=config)
 
-qeff_model = QEFFAutoModelForCausalLM(
-    meta_model,
-    pretrained_model_name_or_path=model_name,
-    continuous_batching=CONTINUOUS_BATCHING,
-)
+def eager_attention_forward(
+    module: nn.Module,
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    attention_mask: Optional[torch.Tensor],
+    scaling: float,
+    **kwargs,
+):
+    key_states = repeat_kv(key, module.num_key_value_groups)
+    value_states = repeat_kv(value, module.num_key_value_groups)
 
-export_dir = Path("test_models/weightfree_from_config")
-export_start = time.perf_counter()
-onnx_path = Path(
-    qeff_model.export(
-        export_dir=export_dir,
-        use_dynamo=True,
-        use_onnx_subfunctions=True,
-        use_weight_free_export=False,
-        offload_pt_weights=False,
-    )
-)
-export_elapsed = time.perf_counter() - export_start
-#weight_spec_path = resolve_weight_spec_path(onnx_path)
+    attn_weights = torch.matmul(query, key_states.transpose(2, 3)) * scaling
+    if attention_mask is not None:
+        attn_weights = torch.where(
+            attention_mask, torch.tensor(MIN_MASKED_ATTENTION_VALUE, dtype=module.config.torch_dtype), attn_weights
+        )
 
-print(f"Weight-free export time: {export_elapsed:.3f} sec")
+    attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query.dtype)
+    attn_output = torch.matmul(attn_weights, value_states)
+    attn_output = attn_output.transpose(1, 2).contiguous()
 
-print("Converting checkpoint to FP32 (one-time local materialization) ...")
-fp32_convert_time_start=time.perf_counter();
-#convert_checkpoint_to_fp32(onnx_path, weight_spec_path)
-fp32_convert_time=time.perf_counter()-fp32_convert_time_start
-print(f"fp32 convert time: {fp32_convert_time:.3f} sec")
-print("Compiling weight-free ONNX ...")
-compile_start = time.perf_counter()
-qpc_path = qeff_model.compile(
-    onnx_path=str(onnx_path),
-    compile_dir=str(onnx_path.parent / "qpc"),
-    prefill_seq_len=8,
-    ctx_len=32,
-    use_dynamo=True,
-    mxfp6_matmul=True,
-    mxint8_kv_cache=True,
-    num_devices=4,
-    use_onnx_subfunctions=True,
-    use_weight_free_export=False,
-)
-compile_time = time.perf_counter()-compile_start
-print(f"compile time: {compile_time:.3f} sec")
-print(f"QPC: {qpc_path}")
+    return attn_output, attn_weights
 
-# session = ort.InferenceSession(str(onnx_path))
-# ort_inputs = load_weight_free_ort_inputs(weight_spec_path, runner.input_handler.prepare_ort_inputs())
-# ort_outputs = runner.run_ort_session(ort_inputs, session)
-# ort_outputs = runner.input_handler.update_ort_outputs(ort_outputs)
 
-# generated_ids = []
-# for _ in range(1, runner.gen_len):
-#     generated_ids.append(ort_outputs["logits"].argmax(-1).reshape(-1, 1))
-#     ort_inputs = runner.input_handler.update_ort_inputs(ort_inputs, ort_outputs)
-#     ort_inputs = load_weight_free_ort_inputs(weight_spec_path, ort_inputs)
-#     ort_outputs = runner.run_ort_session(ort_inputs, session)
-#     ort_outputs = runner.input_handler.update_ort_outputs(ort_outputs)
+class QEffQwen3Attention(Qwen3Attention):
+    """
+    Copied from Qwen3Attention: https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen3/modeling_qwen3.py
+    The only differences are:
+    - add new args position idx for the cache_kwargs for kv retention
+    """
 
-# generated_ids.append(ort_outputs["logits"].argmax(-1).reshape(-1, 1))
-# generated_ids = np.concatenate(generated_ids, axis=1)
-# generated_text = runner.input_handler.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        attention_mask: Optional[torch.Tensor],
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[Cache] = None,
+        comp_ctx_lengths: Optional[torch.LongTensor] = None,
+        batch_index: Optional[torch.LongTensor] = None,
+        cache_position: Optional[torch.LongTensor] = None,
+        cos_cached: Optional[torch.Tensor] = None,
+        sin_cached: Optional[torch.Tensor] = None,
+        **kwargs,
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
+        input_shape = hidden_states.shape[:-1]
+        hidden_shape = (*input_shape, -1, self.head_dim)
 
-print("Running QPC generate ...")
-try:
-    exec_info = qeff_model.generate(
-        prompts=["My name is"],
-        tokenizer=tokenizer,
-        automation=True,
-        generation_len=runner.gen_len,
-    )
-    qpc_generated_ids = np.asarray(exec_info.generated_ids[0]).reshape(1, -1)
-    qpc_generated_text = tokenizer.batch_decode(qpc_generated_ids, skip_special_tokens=True)
+        query_states = self.q_norm(self.q_proj(hidden_states).view(hidden_shape)).transpose(1, 2)
+        key_states = self.k_norm(self.k_proj(hidden_states).view(hidden_shape)).transpose(1, 2)
+        value_states = self.v_proj(hidden_states).view(hidden_shape).transpose(1, 2)
 
-    print(exec_info)
-    print(generated_ids)
-    print(generated_text)
-    print(qpc_generated_ids)
-    print(qpc_generated_text)
-except RuntimeError as exc:
-    print(f"Skipping QPC generate: {exc}")
+        # kv_seq_len = past_key_value.get_seq_length(self.layer_idx, cache_position)
+        query_states, key_states = qeff_apply_rotary_pos_emb(query_states, key_states, cos_cached, sin_cached)
 
-print(f"Weight-free ONNX: {onnx_path}")
-print(f"Weight spec: {weight_spec_path}")
-#print(generated_text)
+        past_seen_tokens = past_key_values.get_seq_length(self.layer_idx) if past_key_values is not None else 0
+        blocking_config = getattr(self, "attn_blocking_config", AttentionBlockingConfig())
+        use_blocking = blocking_config is not None and (blocking_config.mode != BlockingMode.NONE)
+        if use_blocking:
+            attn_output, attn_weights = generic_blocked_attention_interface(
+                module=self,
+                query=query_states,
+                key=key_states,
+                value=value_states,
+                attention_mask=attention_mask,
+                scaling=self.scaling,
+                layer_idx=self.layer_idx,
+                past_key_value=past_key_values,
+                blocking_config=blocking_config,
+                comp_ctx_length=comp_ctx_lengths,
+                batch_index=batch_index,
+                position_ids=position_ids,
+                past_seen_tokens=past_seen_tokens,
+            )
+        else:
+            key_states, value_states, _ = past_key_value_update(
+                module=self,
+                key=key_states,
+                value=value_states,
+                attention_mask=attention_mask,
+                past_key_value=past_key_values,
+                comp_ctx_lengths=comp_ctx_lengths,
+                batch_index=batch_index,
+                position_ids=position_ids,
+            )
+            attn_output, attn_weights = eager_attention_forward(
+                self,
+                query_states,
+                key_states,
+                value_states,
+                attention_mask,
+                scaling=self.scaling,
+                **kwargs,
+            )
+
+        attn_output = attn_output.reshape(*input_shape, -1).contiguous()
+        attn_output = self.o_proj(attn_output)
+        return attn_output, attn_weights
+
+
+class QEffQwen3DecoderLayer(Qwen3DecoderLayer):
+    """
+    Copied from Qwen3ForCausalLM: https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen3/modeling_qwen3.py
+    The only differences are:
+    - add new args position idx for the cache_kwargs for kv retention
+    - update the hidden_states, and fix for onnx model
+    """
+
+    @torch.compiler.nested_compile_region
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_value: Optional[Cache] = None,
+        comp_ctx_lengths: Optional[torch.LongTensor] = None,
+        batch_index: Optional[torch.LongTensor] = None,
+        use_cache: Optional[bool] = False,
+        cache_position: Optional[torch.LongTensor] = None,
+        sin_cached=None,
+        cos_cached=None,
+        **kwargs,
+    ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
+        """
+        Args:
+            hidden_states (`torch.FloatTensor`): input to the layer of shape `(batch, seq_len, embed_dim)`
+            attention_mask (`torch.FloatTensor`, *optional*): attention mask of size
+                `(batch, sequence_length)` where padding elements are indicated by 0.
+            use_cache (`bool`, *optional*):
+                If set to `True`, `past_key_values` key value states are returned and can be used to speed up decoding
+                (see `past_key_values`).
+            past_key_value (`Tuple(torch.FloatTensor)`, *optional*): cached past key and value projection states
+            cache_position (`torch.LongTensor` of shape `(sequence_length)`, *optional*):
+                Indices depicting the position of the input sequence tokens in the sequence.
+            kwargs (`dict`, *optional*):
+                Arbitrary kwargs to be ignored, used for FSDP and other methods that injects code
+                into the model
+        """
+
+        residual = hidden_states
+
+        hidden_states = self.input_layernorm(hidden_states)
+
+        # Self Attention
+        hidden_states, _ = self.self_attn(
+            hidden_states=hidden_states,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_values=past_key_value,
+            comp_ctx_lengths=comp_ctx_lengths,
+            batch_index=batch_index,
+            use_cache=use_cache,
+            cache_position=cache_position,
+            sin_cached=sin_cached,
+            cos_cached=cos_cached,
+            **kwargs,
+        )
+        hidden_states = residual + hidden_states
+
+        # Fully Connected
+        residual = hidden_states
+        hidden_states = self.post_attention_layernorm(hidden_states)
+        hidden_states = self.mlp(hidden_states)
+        hidden_states = residual + hidden_states
+
+        return hidden_states
+
+
+class QEffQwen3Model(Qwen3Model):
+    """
+    Copied from Qwen3Model: https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen3/modeling_qwen3.py
+    The only differences are:
+    - add new args position idx for the cache_kwargs for kv retention
+    - update causal attention mask
+    """
+
+    def __qeff_init__(self):
+        self.rotary_emb = QEffQwen3RotaryEmbedding(config=self.config)
+        self.register_buffer(
+            "sin_cached", self.rotary_emb.sin_cached * self.rotary_emb.attention_scaling, persistent=False
+        )
+        self.register_buffer(
+            "cos_cached", self.rotary_emb.cos_cached * self.rotary_emb.attention_scaling, persistent=False
+        )
+
+    def forward(
+        self,
+        input_ids: torch.LongTensor = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[Cache] = None,
+        comp_ctx_lengths: Optional[torch.LongTensor] = None,
+        batch_index: Optional[torch.LongTensor] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        cache_position: Optional[torch.LongTensor] = None,
+        **kwargs,
+    ) -> Union[Tuple, BaseModelOutputWithPast]:
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
+        use_cache = use_cache if use_cache is not None else self.config.use_cache
+
+        if (input_ids is None) ^ (inputs_embeds is not None):
+            raise ValueError(
+                "You cannot specify both input_ids and inputs_embeds at the same time, and must specify either one"
+            )
+
+        return_legacy_cache = False
+        if use_cache and not isinstance(past_key_values, Cache):
+            return_legacy_cache = True
+            past_key_values = QEffDynamicCache.from_legacy_cache(past_key_values)
+
+        if inputs_embeds is None:
+            inputs_embeds = self.embed_tokens(input_ids)
+
+        if cache_position is None:
+            past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
+            cache_position = torch.arange(
+                past_seen_tokens, past_seen_tokens + inputs_embeds.shape[1], device=inputs_embeds.device
+            )
+        if position_ids is None:
+            position_ids = cache_position.unsqueeze(0)
+
+        target_length = attention_mask.shape[-1] if isinstance(attention_mask, torch.Tensor) else past_seen_tokens
+        causal_mask = _create_causal_mask(
+            position_ids=position_ids, target_length=target_length, sliding_window=self.config.sliding_window
+        )
+
+        hidden_states = inputs_embeds
+
+        # decoder layers
+        all_hidden_states = () if output_hidden_states else None
+        sin = self.sin_cached[position_ids].unsqueeze(1)
+        cos = self.cos_cached[position_ids].unsqueeze(1)
+
+        for decoder_layer in self.layers:
+            if output_hidden_states:
+                all_hidden_states += (hidden_states,)
+
+            hidden_states = decoder_layer(
+                hidden_states,
+                attention_mask=causal_mask,
+                position_ids=position_ids,
+                past_key_value=past_key_values,
+                comp_ctx_lengths=comp_ctx_lengths,
+                batch_index=batch_index,
+                use_cache=use_cache,
+                cache_position=cache_position,
+                sin_cached=sin,
+                cos_cached=cos,
+            )
+
+        hidden_states = self.norm(hidden_states)
+
+        # add hidden states from the last decoder layer
+        if output_hidden_states:
+            all_hidden_states += (hidden_states,)
+
+        if return_legacy_cache:
+            past_key_values = past_key_values.to_legacy_cache()
+
+        return BaseModelOutputWithPast(
+            last_hidden_state=hidden_states,
+            past_key_values=past_key_values if use_cache else None,
+            hidden_states=all_hidden_states,
+        )
+
+
+class QEffQwen3ForCausalLM(Qwen3ForCausalLM):
+    """
+    Copied from Qwen3ForCausalLM: https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen3/modeling_qwen3.py
+    The only differences are:
+    - add new args position idx for the cache_kwargs for kv retention
+    - update the hidden_states, and fix for onnx model
+    """
+
+    def get_submodules_for_export(self) -> Type[nn.Module]:
+        """
+        Return the set of class used as the repeated layer across the model for subfunction extraction.
+        Notes:
+            This method should return the *class object* (not an instance).
+            Downstream code can use this to find/build subfunctions for repeated blocks.
+        """
+        return {QEffQwen3DecoderLayer}
+
+    def forward(
+        self,
+        input_ids: torch.LongTensor = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[Union[Cache, List[torch.FloatTensor]]] = None,
+        comp_ctx_lengths: Optional[torch.LongTensor] = None,
+        batch_index: Optional[torch.LongTensor] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        cache_position: Optional[torch.LongTensor] = None,
+        logits_to_keep: Union[int, torch.Tensor] = 0,
+        **kwargs,
+    ) -> Union[Tuple, CausalLMOutputWithPast]:
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
+
+        # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
+        outputs = self.model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_values=past_key_values,
+            comp_ctx_lengths=comp_ctx_lengths,
+            batch_index=batch_index,
+            inputs_embeds=inputs_embeds,
+            use_cache=use_cache,
+            output_hidden_states=output_hidden_states,
+        )
+
+        # Cast to INT32 to avoid issue while running in ONNXRT
+        logit_index = position_ids.to(torch.int32).argmax(1, keepdim=True)
+        hidden_states = outputs.last_hidden_state[torch.arange(position_ids.shape[0]).view(-1, 1), logit_index]
+        logits = self.lm_head(hidden_states).float()
+
+        return CausalLMOutputWithPast(
+            loss=None,
+            logits=logits,
+            past_key_values=outputs.past_key_values,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions,
+        )
