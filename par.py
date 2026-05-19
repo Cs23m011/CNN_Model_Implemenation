@@ -1,51 +1,164 @@
-[torch.onnx] Translate the graph into ONNX... ✅
-Fetching 125 files: 100%|██████████| 125/125 [00:00<00:00, 688.83it/s]
-ERROR - QEfficient.base.modeling_qeff - ONNX export or transforms failed: Cannot copy out of meta tensor; no data!  (modeling_qeff.py:534)
+[18:57:26.929][error][QPrdNeuralNetwork][deactivate:#1344][ThId:5851] Dev 4 VC 151 NAID 1 deactivate failed status 300               [84/366]
+ERROR : [18:57:26.931998115  UTC]  HOST  [LogCommon] [error] [runIoctlCmd:#1171][ThId:8665] ioctl failed with return code: -1 errno:Operation
+ canceled                                                                                                                                    
+                                                                                                                                             
+[18:57:26.931][error][LogCommon][runIoctlCmd:#1171][ThId:8665] ioctl failed with return code: -1 errno:Operation canceled                    
+ERROR : [18:57:26.933298591  UTC]  HOST  [QPrdNeuralNetwork] [error] [wait:#867][ThId:8665] Dev:4 VC:3, failed to receive response from NW wi
+th error: Operation canceled.                                                                                                                
+                                                                                                                                             
+[18:57:26.933][error][QPrdNeuralNetwork][wait:#867][ThId:8665] Dev:4 VC:3, failed to receive response from NW with error: Operation canceled.
+ERROR : [18:57:26.933401005  UTC]  HOST  [QPrdNeuralNetwork] [error] [wait:#869][ThId:8665] Increase QAicProgramProperties::dataPathTimeoutMs
+, current: 60000.                                                                                                                            
+                                                                                                                                             
+[18:57:26.933][error][QPrdNeuralNetwork][wait:#869][ThId:8665] Increase QAicProgramProperties::dataPathTimeoutMs, current: 60000.            
+ERROR : [18:57:26.933623855  UTC]  HOST  [Aic-0] [error] [ExecObj:ID:  3,L:1387] Dev 4 wait in kernel failed                                 
+                                                                                                                                             
+[18:57:26.933][error][Aic-0][ExecObj:ID:  3,L:1387] Dev 4 wait in kernel failed                                            
+ERROR : [18:57:26.933745590  UTC]  HOST  [Aic-0] [error] [QueueFinish:ID:  8,L: 697] Failed to finish Execobj:3, status:500                  
+                                                                                                                                             
+[18:57:26.933][error][Aic-0][QueueFinish:ID:  8,L: 697] Failed to finish Execobj:3, status:500                             
+ERROR : [18:57:26.933768601  UTC]  HOST  [Aic-0] [error] [QMqExecObj:ID:10000,L: 608] [MqProg:19] is in error state: 100                     
+                                                                                                                                             
+[18:57:26.933][error][Aic-0][QMqExecObj:ID:10000,L: 608] [MqProg:19] is in error state: 100                                                  
+ERROR : [18:57:26.934647819  UTC]  HOST  [QPrdNeuralNetwork] [error] [deactivate:#1344][ThId:5851] Dev 5 VC 151 NAID 1 deactivate failed stat
+us 300                                                                                                                                       
+                                                                                                                                             
+[18:57:26.934][error][QPrdNeuralNetwork][deactivate:#1344][ThId:5851] Dev 5 VC 151 NAID 1 deactivate failed status 300
+ERROR : [18:57:26.938227653  UTC]  HOST  [LogCommon] [error] [runIoctlCmd:#1171][ThId:5181] ioctl failed with return code: -1 errno:Operation
+ canceled                                                                                                                                    
+                                     
+[18:57:26.938][error][LogCommon][runIoctlCmd:#1171][ThId:5181] ioctl failed with return code: -1 errno:Operation canceled                    
+ERROR : [18:57:26.938288176  UTC]  HOST  [QPrdNeuralNetwork] [error] [wait:#867][ThId:5181] Dev:5 VC:3, failed to receive response from NW wi
+th error: Operation canceled.                                                                                                                
+                                     
+[18:57:26.938][error][QPrdNeuralNetwork][wait:#867][ThId:5181] Dev:5 VC:3, failed to receive response from NW with error: Operation canceled.
+ERROR : [18:57:26.938295146  UTC]  HOST  [QPrdNeuralNetwork] [error] [wait:#869][ThId:5181] Increase QAicProgramProperties::dataPathTimeoutMs
+, current: 60000.                                                                                                                            
+
+[18:57:26.938][error][QPrdNeuralNetwork][wait:#869][ThId:5181] Increase QAicProgramProperties::dataPathTimeoutMs, current: 60000.
+ERROR : [18:57:26.938305187  UTC]  HOST  [Aic-0] [error] [ExecObj:ID:  2,L:1387] Dev 5 wait in kernel failed               
+
+[18:57:26.938][error][Aic-0][ExecObj:ID:  2,L:1387] Dev 5 wait in kernel failed               
+ERROR : [18:57:26.938311257  UTC]  HOST  [Aic-0] [error] [QueueFinish:ID:  7,L: 697] Failed to finish Execobj:2, status:500
+
+[18:57:26.938][error][Aic-0][QueueFinish:ID:  7,L: 697] Failed to finish Execobj:2, status:500
+ERROR : [18:57:26.938322267  UTC]  HOST  [Aic-0] [error] [QMqExecObj:ID:10000,L: 608] [MqProg:19] is in error state: 100           
+
+[18:57:26.938][error][Aic-0][QMqExecObj:ID:10000,L: 608] [MqProg:19] is in error state: 100           
+ERROR : [18:57:26.938504565  UTC]  HOST  [Aic-0] [error] [QMqExecObj:ID:10000,L:1366] [MqProg:19] is in error state #IN_FINISH: 100          
+
+[18:57:26.938][error][Aic-0][QMqExecObj:ID:10000,L:1366] [MqProg:19] is in error state #IN_FINISH: 100   
+[18:57:26.938][error][Aic-0][QMqExecObj:ID:10000,L:1366] [MqProg:19] is in error state #IN_FINISH: 100                
+ERROR : [18:57:26.938524086  UTC]  HOST  [Aic-0] [error] [QueueFinish:ID:  0,L: 697] Failed to finish Execobj:10000, status:500
+
+[18:57:26.938][error][Aic-0][QueueFinish:ID:  0,L: 697] Failed to finish Execobj:10000, status:500
+ERROR : [18:57:26.938529976  UTC]  HOST  [Aic-0] [error] [QMqExecObj:ID:10000,L: 369] Program Device is not initialized
+
+[18:57:26.938][error][Aic-0][QMqExecObj:ID:10000,L: 369] Program Device is not initialized
 Traceback (most recent call last):
-  File "/home/amarshar/weightfree_exp/QEfficient/utils/export_utils.py", line 209, in wrapper
-    onnx_path = func(self, *args, **kwargs)
-                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree_exp/QEfficient/base/modeling_qeff.py", line 535, in _export
-    raise e
-  File "/home/amarshar/weightfree_exp/QEfficient/base/modeling_qeff.py", line 433, in _export
-    ) = export_weight_free_onnx(
-        ^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree_exp/QEfficient/exporter/weight_free.py", line 269, in export_weight_free_onnx
-    onnx_program.save(str(tmp_onnx_path))
-  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/onnx/_internal/exporter/_onnx_program.py", line 380, in save
-    onnxscript_apis.save_model_with_external_data(self.model, destination)
-  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/onnxscript/_framework_apis/torch_2_5.py", line 108, in save_model_with_external_data
-    ir.save(model, model_path, external_data=data_path)
-  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/onnx_ir/_io.py", line 116, in save
-    model = _external_data.unload_from_model(
-            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/onnx_ir/external_data.py", line 440, in unload_from_model
-    external_tensors = convert_tensors_to_external(
-                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/onnx_ir/external_data.py", line 342, in convert_tensors_to_external
-    _write_external_data(sorted_tensors, external_data_infos, path, callback=callback)
-  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/onnx_ir/external_data.py", line 228, in _write_external_data
-    tensor.tofile(data_file)
-  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/onnx/_internal/exporter/_core.py", line 194, in tofile
-    _, data = self._get_cbytes()
-              ^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree_exp/.venv/lib/python3.12/site-packages/torch/onnx/_internal/exporter/_core.py", line 166, in _get_cbytes
-    tensor = self.raw.detach().cpu().contiguous()
-             ^^^^^^^^^^^^^^^^^^^^^^^
-NotImplementedError: Cannot copy out of meta tensor; no data!
+  File "/home/amarshar/weightfree_exp/examples/text_generation/weight_free_export_from_config.py", line 196, in <module>
+    exec_info = qeff_model.generate(
+  File "/home/amarshar/weightfree_exp/QEfficient/transformers/models/modeling_auto.py", line 3903, in generate
+    return QEfficient.cloud_ai_100_exec_kv(
+  File "/home/amarshar/weightfree_exp/QEfficient/generation/text_generation_inference.py", line 409, in cloud_ai_100_exec_kv
+    exec_info = [
+  File "/home/amarshar/weightfree_exp/QEfficient/generation/text_generation_inference.py", line 410, in <listcomp>
+    generate_text.generate(prompt[i : i + batch_size], generation_len, stream, prompt_to_lora_id_mapping)
+  File "/home/amarshar/weightfree_exp/QEfficient/generation/text_generation_inference.py", line 1311, in generate
+    perf_metrics, generated_texts = self._regular_model_execution(
+  File "/home/amarshar/weightfree_exp/QEfficient/generation/text_generation_inference.py", line 1177, in _regular_model_execution
+    outputs, position_ids, generation_len = self._qaic_model.run_prefill(
+  File "/home/amarshar/weightfree_exp/QEfficient/generation/text_generation_inference.py", line 853, in run_prefill
+    outputs = self._session.run(chunk_inputs)
+  File "/home/amarshar/weightfree_exp/QEfficient/generation/cloud_infer.py", line 214, in run
+    raise ValueError(error_message) 
+ValueError: Failed to run
 
-The above exception was the direct cause of the following exception:
+(Only if "No matching dimension found" error is present above)
+Allowed shapes:
+0
+input_ids:      8       [1, 1]
+position_ids:   8       [1, 1]
+logits: 4       [1, 1, 128256]
 
-Traceback (most recent call last):
-  File "/home/amarshar/weightfree_exp/examples/text_generation/weight_free_export_from_config.py", line 142, in <module>
-    qeff_model.export(
-  File "/home/amarshar/weightfree_exp/QEfficient/transformers/models/modeling_auto.py", line 3435, in export
-    return self._export(
-           ^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree_exp/QEfficient/utils/export_utils.py", line 212, in wrapper
-    raise RuntimeError(
-RuntimeError: Export failed with use_dynamo=True and use_onnx_subfunctions=True while nested compile regions were enabled for repeate
+1
+input_ids:      8       [1, 8]
+position_ids:   8       [1, 8]
+logits: 4       [1, 1, 128256]
 
+
+Passed shapes:
+input_ids:      8       [1, 8]
+position_ids:   8       [1, 8]
+logits: 4       [1, 1, 128256]
+
+ERROR : [18:57:27.258754649  UTC]  HOST  [Aic-0] [error] [ProgDev:ID:  3,L: 310] Failed to Unload, invalid state detected in programSTATE_PRO
+GRAM_DEVICE_ERROR
+
+[18:57:27.258][error][Aic-0][ProgDev:ID:  3,L: 310] Failed to Unload, invalid state detected in programSTATE_PROGRAM_DEVICE_ERROR
+ERROR : [18:57:27.258805441  UTC]  HOST  [Aic-0] [error] [~QIProgramStateMgr:#74][ThId:5527] failed to unload network
+
+0                                                                                                                                     [7/366]
+input_ids:      8       [1, 1]
+position_ids:   8       [1, 1]
+logits: 4       [1, 1, 128256]
+
+1
+input_ids:      8       [1, 8]
+position_ids:   8       [1, 8]
+logits: 4       [1, 1, 128256]
+
+
+Passed shapes:
+input_ids:      8       [1, 8]
+position_ids:   8       [1, 8]
+logits: 4       [1, 1, 128256]
+
+ERROR : [18:57:27.258754649  UTC]  HOST  [Aic-0] [error] [ProgDev:ID:  3,L: 310] Failed to Unload, invalid state detected in programSTATE_PRO
+GRAM_DEVICE_ERROR
+
+[18:57:27.258][error][Aic-0][ProgDev:ID:  3,L: 310] Failed to Unload, invalid state detected in programSTATE_PROGRAM_DEVICE_ERROR
+ERROR : [18:57:27.258805441  UTC]  HOST  [Aic-0] [error] [~QIProgramStateMgr:#74][ThId:5527] failed to unload network
+
+[18:57:27.258][error][Aic-0][~QIProgramStateMgr:#74][ThId:5527] failed to unload network
+ERROR : [18:57:27.258824072  UTC]  HOST  [LogCommon] [error] [~QNNImage:#47][ThId:5527] Failed to unload network
+
+[18:57:27.258][error][LogCommon][~QNNImage:#47][ThId:5527] Failed to unload network
+ERROR : [18:57:27.259647767  UTC]  HOST  [Aic-0] [error] [ProgDev:ID:  2,L: 310] Failed to Unload, invalid state detected in programSTATE_PRO
+GRAM_DEVICE_ERROR
+
+[18:57:27.259][error][Aic-0][ProgDev:ID:  2,L: 310] Failed to Unload, invalid state detected in programSTATE_PROGRAM_DEVICE_ERROR
+ERROR : [18:57:27.259658258  UTC]  HOST  [Aic-0] [error] [~QIProgramStateMgr:#74][ThId:5527] failed to unload network
+
+[18:57:27.259][error][Aic-0][~QIProgramStateMgr:#74][ThId:5527] failed to unload network
+ERROR : [18:57:27.259667508  UTC]  HOST  [LogCommon] [error] [~QNNImage:#47][ThId:5527] Failed to unload network
+
+[18:57:27.259][error][LogCommon][~QNNImage:#47][ThId:5527] Failed to unload network
+ERROR : [18:57:27.260908042  UTC]  HOST  [Aic-0] [error] [ProgDev:ID:  1,L: 310] Failed to Unload, invalid state detected in programSTATE_PRO
+GRAM_DEVICE_ERROR
+
+[18:57:27.260][error][Aic-0][ProgDev:ID:  1,L: 310] Failed to Unload, invalid state detected in programSTATE_PROGRAM_DEVICE_ERROR
+ERROR : [18:57:27.260917622  UTC]  HOST  [Aic-0] [error] [~QIProgramStateMgr:#74][ThId:5527] failed to unload network
+
+[18:57:27.260][error][Aic-0][~QIProgramStateMgr:#74][ThId:5527] failed to unload network
+ERROR : [18:57:27.260924942  UTC]  HOST  [LogCommon] [error] [~QNNImage:#47][ThId:5527] Failed to unload network
+
+[18:57:27.260][error][LogCommon][~QNNImage:#47][ThId:5527] Failed to unload network
+ERROR : [18:57:27.262129514  UTC]  HOST  [Aic-0] [error] [ProgDev:ID:  0,L: 310] Failed to Unload, invalid state detected in programSTATE_PRO
+GRAM_DEVICE_ERROR
+
+[18:57:27.262][error][Aic-0][ProgDev:ID:  0,L: 310] Failed to Unload, invalid state detected in programSTATE_PROGRAM_DEVICE_ERROR
+[18:57:27.260][error][LogCommon][~QNNImage:#47][ThId:5527] Failed to unload network
+ERROR : [18:57:27.262129514  UTC]  HOST  [Aic-0] [error] [ProgDev:ID:  0,L: 310] Failed to Unload, invalid state detected in programSTATE_PRO
+GRAM_DEVICE_ERROR
+
+[18:57:27.262][error][Aic-0][ProgDev:ID:  0,L: 310] Failed to Unload, invalid state detected in programSTATE_PROGRAM_DEVICE_ERROR
+ERROR : [18:57:27.262138755  UTC]  HOST  [Aic-0] [error] [~QIProgramStateMgr:#74][ThId:5527] failed to unload network
+
+[18:57:27.262][error][Aic-0][~QIProgramStateMgr:#74][ThId:5527] failed to unload network
+ERROR : [18:57:27.262148505  UTC]  HOST  [LogCommon] [error] [~QNNImage:#47][ThId:5527] Failed to unload network
+
+[18:57:27.262][error][LogCommon][~QNNImage:#47][ThId:5527] Failed to unload network
 
 # -----------------------------------------------------------------------------
 #
@@ -54,435 +167,211 @@ RuntimeError: Export failed with use_dynamo=True and use_onnx_subfunctions=True 
 #
 # -----------------------------------------------------------------------------
 
-from typing import List, Optional, Tuple, Type
+import os
 
+# -----------------------------------------------------------------------------
+
+import json
+import time
+from pathlib import Path
+import numpy as np
+import onnx
+import onnxruntime as ort
 import torch
-import torch.nn.functional as F
-from torch import nn
-from transformers.modeling_outputs import (
-    MoeCausalLMOutputWithPast,
-    MoeModelOutputWithPast,
+from accelerate import init_empty_weights
+from safetensors.torch import load_file, save_file
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
+
+from QEfficient.exporter.weight_free import _default_weights_roots ,load_weight_free_ort_inputs
+from QEfficient.exporter.weight_spec import (
+    ExternalDataFile,
+    load_weight_spec,
+    resolve_weight_spec_path,
+    save_weight_spec,
 )
-from transformers.models.qwen3_moe.modeling_qwen3_moe import (
-    Qwen3MoeAttention,
-    Qwen3MoeConfig,
-    Qwen3MoeDecoderLayer,
-    Qwen3MoeForCausalLM,
-    Qwen3MoeModel,
-    Qwen3MoeRotaryEmbedding,
-    Qwen3MoeSparseMoeBlock,
-    repeat_kv,
-    rotate_half,
-)
-
-from QEfficient.blocking.attention_blocking import (
-    AttentionBlockingConfig,
-    BlockingMode,
-    generic_blocked_attention_interface,
-    past_key_value_update,
-)
-from QEfficient.transformers.cache_utils import QEffDynamicCache
-from QEfficient.transformers.modeling_attn_mask_utils import _create_causal_mask
-from QEfficient.utils.constants import MIN_MASKED_ATTENTION_VALUE
+from QEfficient.transformers.models.modeling_auto import QEFFAutoModelForCausalLM
+from QEfficient.utils.run_utils import ApiRunner
 
 
-class QEffQwen3MoeRotaryEmbedding(Qwen3MoeRotaryEmbedding):
-    def __init__(self, config: Qwen3MoeConfig, device=None):
-        super().__init__(config=config)
-
-        # Build here to make `torch.jit.trace` work.
-        self._set_cos_sin_cache(
-            seq_len=self.original_max_seq_len, device=self.inv_freq.device, dtype=torch.get_default_dtype()
-        )
-
-    def _set_cos_sin_cache(self, seq_len, device, dtype):
-        self.max_seq_len_cached = seq_len
-        t = torch.arange(self.max_seq_len_cached, device=device, dtype=torch.int64).type_as(self.inv_freq)
-
-        freqs = torch.outer(t, self.inv_freq)
-
-        emb = torch.cat((freqs, freqs), dim=-1)
-        self.register_buffer("cos_cached", emb.cos().to(dtype), persistent=False)
-        self.register_buffer("sin_cached", emb.sin().to(dtype), persistent=False)
-
-
-def qeff_apply_rotary_pos_emb(q, k, cos, sin):
-    """Applies Rotary Position Embedding to the query and key tensors.
-
-    Args:
-        q (`torch.Tensor`): The query tensor.
-        k (`torch.Tensor`): The key tensor.
-        cos (`torch.Tensor`): The cosine part of the rotary embedding.
-        sin (`torch.Tensor`): The sine part of the rotary embedding.
-    Returns:
-        `tuple(torch.Tensor)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
+def convert_checkpoint_to_fp32(onnx_path: Path, weight_spec_path: Path) -> None:
     """
+    Load each safetensors checkpoint file, cast all tensors to FP32,
+    save next to the ONNX, and update weight_spec.json to point there.
 
-    # Apply rotation
-    cos = cos.to(device=q.device)
-    sin = sin.to(device=q.device)
-    q_embed = (q * cos) + (rotate_half(q) * sin)
-    k_embed = (k * cos) + (rotate_half(k) * sin)
-    # Cast back to original dtype
-    return q_embed.to(q.dtype), k_embed.to(k.dtype)
-
-
-def eager_attention_forward(
-    module: nn.Module,
-    query: torch.Tensor,
-    key: torch.Tensor,
-    value: torch.Tensor,
-    attention_mask: Optional[torch.Tensor],
-    scaling: float,
-):
-    key_states = repeat_kv(key, module.num_key_value_groups)
-
-    value_states = repeat_kv(value, module.num_key_value_groups)
-    attn_weights = torch.matmul(query, key_states.transpose(2, 3)) * scaling
-    if attention_mask is not None:
-        masked_fill = torch.full_like(attn_weights, MIN_MASKED_ATTENTION_VALUE, dtype=torch.float32)
-        attn_weights = torch.where(attention_mask, masked_fill, attn_weights)
-
-    attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query.dtype)
-    attn_output = torch.matmul(attn_weights, value_states)
-    attn_output = attn_output.transpose(1, 2).contiguous()
-
-    return attn_output, attn_weights
-
-
-class QEffPrefillChunkedQwen3MoeSparseMoeBlock(Qwen3MoeSparseMoeBlock):
-    def forward(self, hidden_states: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        B, S, H = hidden_states.shape
-        T = B * S
-        x = hidden_states.view(T, H)
-        router_logits = self.gate(x)  # [T, E]
-        prob = F.softmax(router_logits, -1, dtype=torch.float)
-        top_w, top_i = torch.topk(prob, self.top_k, -1)
-        if self.norm_topk_prob:  # only diff with mixtral sparse moe block!
-            top_w /= top_w.sum(-1, keepdim=True)
-        top_w = top_w.to(hidden_states.dtype)
-        masked_logits = torch.zeros_like(router_logits)
-        masked_logits.scatter_(1, top_i, top_w)
-        # Routing weights for each expert [T, E]
-        routing_weights = masked_logits
-        # ────────────────── allocate the output tensor ─────
-        expert_out = x.new_zeros((T, H))  # accumulation buffer
-        # ───────────────────────── Expert computation loop ─────────────────────────────
-        for e in range(self.num_experts):
-            routing_weight = routing_weights[:, e].unsqueeze(-1)  # [T, 1]
-            W_g, W_u = self.experts[e].gate_proj.weight.T, self.experts[e].up_proj.weight.T  # [H, I], [H, I]
-            W_d = self.experts[e].down_proj.weight.T  # [I, H]
-            gate = x @ W_g  # [T, I]
-            up = x @ W_u  # [T, I]
-            down = (up * self.experts[e].act_fn(gate)) @ W_d  # [T, H]
-            masked_down = down * routing_weight
-            expert_out += masked_down
-        return expert_out.view(B, S, H), router_logits
-
-
-class QEffQwen3MoeSparseMoeBlock(Qwen3MoeSparseMoeBlock):
-    def __qeff_init__(self):
-        self.gate_proj_w = []
-        self.up_proj_w = []
-        self.down_proj_w = []
-        with torch.no_grad():
-            for e in range(self.num_experts):
-                self.gate_proj_w.append(self.experts[e].gate_proj.weight.T)
-                self.up_proj_w.append(self.experts[e].up_proj.weight.T)
-                self.down_proj_w.append(self.experts[e].down_proj.weight.T)
-            self.gate_proj_w = torch.stack(self.gate_proj_w)
-            self.up_proj_w = torch.stack(self.up_proj_w)
-            self.down_proj_w = torch.stack(self.down_proj_w)
-
-    def forward(self, hidden_states: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        B, S, H = hidden_states.shape
-        T = B * S
-        hidden_states = hidden_states.view(T, H)
-        router_logits = self.gate(hidden_states)  # [T, E]
-        prob = F.softmax(router_logits, -1, dtype=torch.float)
-        top_w, top_i = torch.topk(prob, self.top_k, -1)
-        if self.norm_topk_prob:  # only diff with mixtral sparse moe block!
-            top_w = top_w / torch.einsum("bi->b", top_w)[:, None]
-        top_w = top_w.to(hidden_states.dtype)
-
-        gate_proj_w = self.gate_proj_w[top_i.flatten()]
-        up_proj_w = self.up_proj_w[top_i.flatten()]
-        down_proj_w = self.down_proj_w[top_i.flatten()]
-
-        expert_in = hidden_states.unsqueeze(1).expand(-1, self.top_k, -1).contiguous().view(-1, 1, H)
-        gate = torch.bmm(expert_in, gate_proj_w)
-        up = torch.bmm(expert_in, up_proj_w)
-        intermediate = up * self.experts[0].act_fn(gate)
-        experts_out = torch.bmm(intermediate, down_proj_w)
-        experts_out = experts_out.view(B * S, self.top_k, H)
-        experts_out = experts_out * top_w.unsqueeze(-1)
-        experts_out = torch.einsum("bnd->bd", experts_out)
-        return experts_out.view(B, S, H), router_logits
-
-
-class QEffQwen3MoeAttention(Qwen3MoeAttention):
-    def forward(
-        self,
-        hidden_states: torch.Tensor,
-        attention_mask: Optional[torch.Tensor],
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[Tuple[torch.Tensor]] = None,
-        comp_ctx_lengths: Optional[torch.LongTensor] = None,
-        batch_index: Optional[torch.LongTensor] = None,
-        cache_position: Optional[torch.LongTensor] = None,
-        cos_cached: Optional[torch.Tensor] = None,
-        sin_cached: Optional[torch.Tensor] = None,
-        **kwargs,
-    ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
-        input_shape = hidden_states.shape[:-1]
-        hidden_shape = (*input_shape, -1, self.head_dim)
-
-        query_states = self.q_norm(self.q_proj(hidden_states).view(hidden_shape)).transpose(1, 2)
-        key_states = self.k_norm(self.k_proj(hidden_states).view(hidden_shape)).transpose(1, 2)
-        value_states = self.v_proj(hidden_states).view(hidden_shape).transpose(1, 2)
-
-        # kv_seq_len = past_key_value.get_seq_length(self.layer_idx, cache_position)
-        query_states, key_states = qeff_apply_rotary_pos_emb(query_states, key_states, cos_cached, sin_cached)
-
-        past_seen_tokens = past_key_values.get_seq_length(self.layer_idx) if past_key_values is not None else 0
-        blocking_config = getattr(self, "attn_blocking_config", AttentionBlockingConfig())
-        use_blocking = blocking_config is not None and (blocking_config.mode != BlockingMode.NONE)
-        if use_blocking:
-            attn_output, attn_weights = generic_blocked_attention_interface(
-                module=self,
-                query=query_states,
-                key=key_states,
-                value=value_states,
-                attention_mask=attention_mask,
-                scaling=self.scaling,
-                layer_idx=self.layer_idx,
-                past_key_value=past_key_values,
-                blocking_config=blocking_config,
-                comp_ctx_length=comp_ctx_lengths,
-                batch_index=batch_index,
-                position_ids=position_ids,
-                past_seen_tokens=past_seen_tokens,
-            )
-        else:
-            key_states, value_states, _ = past_key_value_update(
-                module=self,
-                key=key_states,
-                value=value_states,
-                attention_mask=attention_mask,
-                past_key_value=past_key_values,
-                comp_ctx_lengths=comp_ctx_lengths,
-                batch_index=batch_index,
-                position_ids=position_ids,
-            )
-            attn_output, attn_weights = eager_attention_forward(
-                self,
-                query_states,
-                key_states,
-                value_states,
-                attention_mask,
-                scaling=self.scaling,
-            )
-        attn_output = attn_output.reshape(*input_shape, -1).contiguous()
-        attn_output = self.o_proj(attn_output)
-
-        return attn_output, attn_weights
-
-
-class QEffQwen3MoeDecoderLayer(Qwen3MoeDecoderLayer):
-    @torch.compiler.nested_compile_region
-    def forward(
-        self,
-        hidden_states: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_value: Optional[Tuple[torch.Tensor]] = None,
-        comp_ctx_lengths: Optional[torch.LongTensor] = None,
-        batch_index: Optional[torch.LongTensor] = None,
-        use_cache: Optional[bool] = False,
-        cache_position: Optional[torch.LongTensor] = None,
-        sin_cached=None,
-        cos_cached=None,
-        **kwargs,
-    ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
-        """
-        Args:
-            hidden_states (`torch.FloatTensor`): input to the layer of shape `(batch, seq_len, embed_dim)`
-            attention_mask (`torch.FloatTensor`, *optional*): attention mask of size
-                `(batch, sequence_length)` where padding elements are indicated by 0.
-            use_cache (`bool`, *optional*):
-                If set to `True`, `past_key_values` key value states are returned and can be used to speed up decoding
-                (see `past_key_values`).
-            past_key_value (`Tuple(torch.FloatTensor)`, *optional*): cached past key and value projection states
-            cache_position (`torch.LongTensor` of shape `(sequence_length)`, *optional*):
-                Indices depicting the position of the input sequence tokens in the sequence.
-            kwargs (`dict`, *optional*):
-                Arbitrary kwargs to be ignored, used for FSDP and other methods that injects code
-                into the model
-        """
-
-        residual = hidden_states
-
-        hidden_states = self.input_layernorm(hidden_states)
-
-        # Self Attention
-        hidden_states, _ = self.self_attn(
-            hidden_states=hidden_states,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            past_key_values=past_key_value,
-            comp_ctx_lengths=comp_ctx_lengths,
-            batch_index=batch_index,
-            use_cache=use_cache,
-            cache_position=cache_position,
-            sin_cached=sin_cached,
-            cos_cached=cos_cached,
+    This ensures the compiler sees matching dtypes between the ONNX (FLOAT)
+    and the safetensors files (also FLOAT after conversion).
+    """
+    spec = load_weight_spec(weight_spec_path)
+    export_dir = onnx_path.parent
+    candidate_roots = _default_weights_roots(weight_spec_path, spec)
+    local_files = [
+        ExternalDataFile(
+            path=f"model_{idx:04d}.safetensors" if len(spec.files) > 1 else "model.safetensors",
+            format="safetensors",
         )
-        hidden_states = residual + hidden_states
+        for idx, _ in enumerate(spec.files)
+    ]
 
-        # Fully Connected
-        residual = hidden_states
-        hidden_states = self.post_attention_layernorm(hidden_states)
+    # Reuse previously materialized local safetensors even if a fresh export
+    # rewrote the spec back to the original checkpoint paths.
+    if local_files and all((export_dir / ext_file.path).is_file() for ext_file in local_files):
+        print("Reusing existing local FP32 safetensors.")
+        spec.files = local_files
+        save_weight_spec(weight_spec_path, spec)
+        _sync_embedded_extdata(onnx_path, weight_spec_path)
+        return
 
-        hidden_states = self.mlp(hidden_states)
-        if isinstance(hidden_states, tuple):
-            hidden_states, _ = hidden_states
+    new_files = []
+    for idx, ext_file in enumerate(spec.files):
+        rel_path = Path(ext_file.path)
+        abs_path = rel_path if rel_path.is_absolute() else None
+        if abs_path is None:
+            for root in candidate_roots:
+                candidate = root / rel_path
+                if candidate.exists():
+                    abs_path = candidate
+                    break
+        if abs_path is None or not abs_path.exists():
+            raise FileNotFoundError(f"Cannot resolve external data file: {ext_file.path}")
 
-        hidden_states = residual + hidden_states
+        tensors = load_file(str(abs_path))
+        fp32_tensors = {k: v.to(torch.float32) for k, v in tensors.items()}
 
-        return hidden_states
+        out_name = f"model_{idx:04d}.safetensors" if len(spec.files) > 1 else "model.safetensors"
+        save_file(fp32_tensors, str(export_dir / out_name))
+        new_files.append(ExternalDataFile(path=out_name, format="safetensors"))
+        print(f"  {abs_path.name}  ({next(iter(tensors.values())).dtype})  →  {out_name}  (float32)")
 
-
-class QEffQwen3MoeModel(Qwen3MoeModel):
-    def __qeff_init__(self):
-        self.rotary_emb = QEffQwen3MoeRotaryEmbedding(config=self.config)
-        self.sin_cached = torch.nn.Parameter(self.rotary_emb.sin_cached)
-        self.cos_cached = torch.nn.Parameter(self.rotary_emb.cos_cached)
-
-    def forward(
-        self,
-        input_ids: Optional[torch.LongTensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[List[torch.FloatTensor]] = None,
-        comp_ctx_lengths: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        use_cache: Optional[bool] = None,
-        batch_index: Optional[torch.LongTensor] = None,
-        output_hidden_states: Optional[bool] = None,
-        cache_position: Optional[torch.LongTensor] = None,
-    ) -> MoeModelOutputWithPast:
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
-        )
-        use_cache = use_cache if use_cache is not None else self.config.use_cache
-
-        if (input_ids is None) ^ (inputs_embeds is not None):
-            raise ValueError("You must specify exactly one of input_ids or inputs_embeds")
-
-        if inputs_embeds is None:
-            inputs_embeds = self.embed_tokens(input_ids)
-
-        past_key_values_length = 0
-        if past_key_values is not None:
-            past_key_values_length = past_key_values[0][0].shape[2]
-
-        past_key_values = QEffDynamicCache.from_legacy_cache(past_key_values)
-
-        if position_ids is None:
-            position_ids = cache_position.unsqueeze(0)
-
-        causal_mask = _create_causal_mask(position_ids=position_ids, target_length=past_key_values_length)
-
-        hidden_states = inputs_embeds
-
-        # decoder layers
-        all_hidden_states = () if output_hidden_states else None
-        sin = self.sin_cached[position_ids].unsqueeze(1)
-        cos = self.cos_cached[position_ids].unsqueeze(1)
-
-        for decoder_layer in self.layers:
-            if output_hidden_states:
-                all_hidden_states += (hidden_states,)
-
-            hidden_states = decoder_layer(
-                hidden_states,
-                attention_mask=causal_mask,
-                position_ids=position_ids,
-                past_key_value=past_key_values,
-                comp_ctx_lengths=comp_ctx_lengths,
-                batch_index=batch_index,
-                use_cache=use_cache,
-                cache_position=cache_position,
-                sin_cached=sin,
-                cos_cached=cos,
-            )
-
-        hidden_states = self.norm(hidden_states)
-
-        # add hidden states from the last decoder layer
-        if output_hidden_states:
-            all_hidden_states += (hidden_states,)
-
-        past_key_values = past_key_values.to_legacy_cache()
-
-        return MoeModelOutputWithPast(
-            last_hidden_state=hidden_states,
-            past_key_values=past_key_values,
-            hidden_states=all_hidden_states,
-        )
+    spec.files = new_files
+    save_weight_spec(weight_spec_path, spec)
+    _sync_embedded_extdata(onnx_path, weight_spec_path)
 
 
-class QEffQwen3MoeForCausalLM(Qwen3MoeForCausalLM):
-    def get_submodules_for_export(self) -> Type[nn.Module]:
-        """
-        Return the set of class used as the repeated layer across the model for subfunction extraction.
-        Notes:
-            This method should return the *class object* (not an instance).
-            Downstream code can use this to find/build subfunctions for repeated blocks.
-        """
-        return {QEffQwen3MoeDecoderLayer}
+def _sync_embedded_extdata(onnx_path: Path, weight_spec_path: Path) -> None:
+    # Keep the embedded external-data metadata aligned with weight_spec.json so
+    # compiler and ORT verification resolve the same files.
+    updated_json = json.dumps(json.loads(weight_spec_path.read_text()), separators=(",", ":"), sort_keys=True)
+    onnx_model = onnx.load(str(onnx_path), load_external_data=False)
+    for entry in onnx_model.metadata_props:
+        if entry.key == "com.qti.aisw.extdata":
+            entry.value = updated_json
+            break
+    tmp = onnx_path.with_suffix(onnx_path.suffix + ".tmp")
+    onnx.save(onnx_model, str(tmp))
+    tmp.replace(onnx_path)
 
-    def forward(
-        self,
-        input_ids: Optional[torch.LongTensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[List[torch.FloatTensor]] = None,
-        comp_ctx_lengths: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        batch_index: Optional[torch.LongTensor] = None,
-        use_cache: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        cache_position: Optional[torch.LongTensor] = None,
-        **kwargs,
-    ) -> MoeCausalLMOutputWithPast:
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
-        )
-        # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
-        outputs = self.model(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            past_key_values=past_key_values,
-            comp_ctx_lengths=comp_ctx_lengths,
-            inputs_embeds=inputs_embeds,
-            batch_index=batch_index,
-            use_cache=use_cache,
-            output_hidden_states=output_hidden_states,
-            cache_position=cache_position,
-            **kwargs,
-        )
 
-        hidden_states = outputs.last_hidden_state
-        logit_idx = position_ids.to(torch.int32).argmax(1, keepdim=True)
-        hidden_states = outputs.last_hidden_state[torch.arange(position_ids.shape[0]).view(-1, 1), logit_idx]
-        logits = self.lm_head(hidden_states).float()
+model_name = "meta-llama/Llama-3.3-70B-Instruct"
+#model_name = "Qwen/Qwen3-8B"
+#model_name="meta-llama/Llama-3.2-1B"
+#model_name="Qwen/Qwen3-235B-A22B-Instruct-2507"
+# model_name = "gpt2"
+# model_name = "hf-internal-testing/tiny-random-LlamaForCausalLM"
 
-        return MoeCausalLMOutputWithPast(
-            logits=logits,
-            past_key_values=outputs.past_key_values,
-            hidden_states=outputs.hidden_states,
-            attentions=outputs.attentions,
-            router_logits=outputs.router_logits,
-        )
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+config = AutoConfig.from_pretrained(model_name)
+# config.num_hidden_layers = 2
+config.torch_dtype = torch.float32
+print(config)
+
+CONTINUOUS_BATCHING = False
+FULL_BATCH_SIZE = 4  # slots in the KV cache; active batch_size stays at 1 here # NOT VERIFIED, WIP
+
+runner = ApiRunner(
+    batch_size=1,
+    tokenizer=tokenizer,
+    config=config,
+    prompt=["My name is"],
+    prompt_len=8,
+    ctx_len=32,
+    full_batch_size=FULL_BATCH_SIZE if CONTINUOUS_BATCHING else None,
+)
+
+with init_empty_weights():
+   meta_model = AutoModelForCausalLM.from_config(config, attn_implementation="eager")
+#meta_model=AutoModelForCausalLM.from_pretrained(model_name,config=config)
+
+qeff_model = QEFFAutoModelForCausalLM(
+    meta_model,
+    pretrained_model_name_or_path=model_name,
+    continuous_batching=CONTINUOUS_BATCHING,
+)
+
+export_dir = Path("test_models/weightfree_from_config")
+export_start = time.perf_counter()
+onnx_path = Path(
+    qeff_model.export(
+        export_dir=export_dir,
+        use_dynamo=True,
+        use_onnx_subfunctions=True,
+        use_weight_free_export=True,
+        offload_pt_weights=False,
+    )
+)
+export_elapsed = time.perf_counter() - export_start
+weight_spec_path = resolve_weight_spec_path(onnx_path)
+
+print(f"Weight-free export time: {export_elapsed:.3f} sec")
+
+print("Converting checkpoint to FP32 (one-time local materialization) ...")
+fp32_convert_time_start=time.perf_counter();
+convert_checkpoint_to_fp32(onnx_path, weight_spec_path)
+fp32_convert_time=time.perf_counter()-fp32_convert_time_start
+print(f"fp32 convert time: {fp32_convert_time:.3f} sec")
+print("Compiling weight-free ONNX ...")
+compile_start = time.perf_counter()
+qpc_path = qeff_model.compile(
+    onnx_path=str(onnx_path),
+    compile_dir=str(onnx_path.parent / "qpc"),
+    prefill_seq_len=8,
+    ctx_len=32,
+    num_devices=4,
+    mxfp6_matmul=True,
+    mxint8_kv_cache=True,
+    use_dynamo=True,
+    use_onnx_subfunctions=True,
+    use_weight_free_export=True,
+)
+compile_time = time.perf_counter()-compile_start
+print(f"compile time: {compile_time:.3f} sec")
+print(f"QPC: {qpc_path}")
+
+session = ort.InferenceSession(str(onnx_path))
+ort_inputs = load_weight_free_ort_inputs(weight_spec_path, runner.input_handler.prepare_ort_inputs())
+ort_outputs = runner.run_ort_session(ort_inputs, session)
+ort_outputs = runner.input_handler.update_ort_outputs(ort_outputs)
+
+generated_ids = []
+for _ in range(1, runner.gen_len):
+    generated_ids.append(ort_outputs["logits"].argmax(-1).reshape(-1, 1))
+    ort_inputs = runner.input_handler.update_ort_inputs(ort_inputs, ort_outputs)
+    ort_inputs = load_weight_free_ort_inputs(weight_spec_path, ort_inputs)
+    ort_outputs = runner.run_ort_session(ort_inputs, session)
+    ort_outputs = runner.input_handler.update_ort_outputs(ort_outputs)
+
+generated_ids.append(ort_outputs["logits"].argmax(-1).reshape(-1, 1))
+generated_ids = np.concatenate(generated_ids, axis=1)
+generated_text = runner.input_handler.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
+
+print("Running QPC generate ...")
+try:
+    exec_info = qeff_model.generate(
+        prompts=["My name is"],
+        tokenizer=tokenizer,
+        automation=True,
+        generation_len=runner.gen_len,
+    )
+    qpc_generated_ids = np.asarray(exec_info.generated_ids[0]).reshape(1, -1)
+    qpc_generated_text = tokenizer.batch_decode(qpc_generated_ids, skip_special_tokens=True)
+
+    print(exec_info)
+    print(generated_ids)
+    print(generated_text)
+    print(qpc_generated_ids)
+    print(qpc_generated_text)
+except RuntimeError as exc:
+    print(f"Skipping QPC generate: {exc}")
+
+print(f"Weight-free ONNX: {onnx_path}")
+print(f"Weight spec: {weight_spec_path}")
+#print(generated_text)
