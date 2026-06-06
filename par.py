@@ -462,3 +462,16 @@ for st in glob.glob("gpt-oss-20b-dequant/*.safetensors"):
                 print(k)
         break
 PY
+Here's the output. Key observations:
+
+  - All layers (0–23) have expert weights in this format:
+  model.layers.{N}.mlp.experts.gate_proj
+  model.layers.{N}.mlp.experts.gate_proj_bias
+  model.layers.{N}.mlp.experts.up_proj
+  model.layers.{N}.mlp.experts.up_proj_bias
+  model.layers.{N}.mlp.experts.gate_up_proj_bias
+  - The weights are stored as flat tensors (experts.gate_proj, not experts.0.gate_proj) — meaning all experts are packed into a single tensor
+   per layer.
+  - There is no experts.down_proj in the matching keys (your filter didn't include it, but worth noting separately if needed).
+  - gate_up_proj_bias exists as a combined key alongside the separate gate_proj_bias and up_proj_bias.
+
