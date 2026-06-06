@@ -91,3 +91,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+#python dequantize_gpt_oss.py --model openai/gpt-oss-20b --out gpt-oss-2L --num-layers 2
+#python dequantize_gpt_oss.py --model openai/gpt-oss-20b --out gpt-oss-20b-dequant --dtype bfloat16
