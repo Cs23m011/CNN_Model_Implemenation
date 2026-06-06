@@ -82,14 +82,6 @@ Traceback (most recent call last):
   File "/home/amarshar/weightfree-tf5/QEfficient/base/modeling_qeff.py", line 118, in __init__
     self.model, transformed = transform.apply(self.model)
                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/QEfficient/transformers/models/pytorch_transforms.py", line 826, in apply
-    model, transformed = super().apply(model)
-                         ^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/QEfficient/base/pytorch_transforms.py", line 77, in apply
-    module.__qeff_init__()
-  File "/home/amarshar/weightfree-tf5/QEfficient/transformers/models/gpt_oss/modeling_gpt_oss.py", line 52, in __qeff_init__
-    self.gate_proj = nn.Parameter(torch.empty(self.num_experts, self.hidden_size, self.expert_dim))
-                                                                                  ^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1967, in __getattr__
-    raise AttributeError(
-AttributeError: 'QEffGptOssExperts' object has no attribute 'expert_dim'
+  File "/home/amarshar/weightfree-tf5/QEfficient/base/pytorch_transforms.py", line 218, in apply
+    experts.gate_proj.data.copy_(gate)
+NotImplementedError: Cannot copy out of meta tensor; no data!
