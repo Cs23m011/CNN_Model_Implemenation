@@ -1,497 +1,1468 @@
-python3 /home/amarshar/weightfree-tf5/examples/text_generation/compare.py
-`CLIPImageProcessor` requires torchvision (not installed); falling back to `CLIPImageProcessorPil` for backward compatibility. Install torchvision to use the default backend, or import `CLIPImageProcessorPil` directly to silence this warning.
-`SiglipImageProcessor` requires torchvision (not installed); falling back to `SiglipImageProcessorPil` for backward compatibility. Install torchvision to use the default backend, or import `SiglipImageProcessorPil` directly to silence this warning.
-`torch_dtype` is deprecated! Use `dtype` instead!
-GptOssConfig {
-  "architectures": [
-    "QEffGptOssForCausalLM"
-  ],
-  "attention_bias": true,
-  "attention_dropout": 0.0,
-  "bos_token_id": null,
-  "dtype": "float32",
-  "eos_token_id": 200002,
-  "experts_per_token": 4,
-  "head_dim": 64,
-  "hidden_act": "silu",
-  "hidden_size": 2880,
-  "initial_context_length": 4096,
-  "initializer_range": 0.02,
-  "intermediate_size": 2880,
-  "layer_types": [
-    "sliding_attention",
-    "full_attention",
-    "sliding_attention",
-    "full_attention",
-    "sliding_attention",
-    "full_attention",
-    "sliding_attention",
-    "full_attention",
-    "sliding_attention",
-    "full_attention",
-    "sliding_attention",
-    "full_attention",
-    "sliding_attention",
-    "full_attention",
-    "sliding_attention",
-    "full_attention",
-    "sliding_attention",
-    "full_attention",
-    "sliding_attention",
-    "full_attention",
-    "sliding_attention",
-    "full_attention",
-    "sliding_attention",
-    "full_attention"
-  ],
-  "max_position_embeddings": 131072,
-  "max_seq_len_cached": null,
-  "model_type": "gpt_oss",
-  "num_attention_heads": 64,
-  "num_experts_per_tok": 4,
-  "num_hidden_layers": 2,
-  "num_key_value_heads": 8,
-  "num_local_experts": 32,
-  "output_router_logits": false,
-  "pad_token_id": 199999,
-  "rms_norm_eps": 1e-05,
-  "rope_parameters": {
-    "beta_fast": 32.0,
-    "beta_slow": 1.0,
-    "factor": 32.0,
-    "original_max_position_embeddings": 4096,
-    "rope_theta": 150000,
-    "rope_type": "yarn",
-    "truncate": false
-  },
-  "router_aux_loss_coef": 0.9,
-  "sliding_window": 128,
-  "swiglu_limit": 7.0,
-  "tie_word_embeddings": false,
-  "transformers_version": "5.5.4",
-  "use_cache": true,
-  "vocab_size": 201088
-}
+# -----------------------------------------------------------------------------
+#
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+# SPDX-License-Identifier: BSD-3-Clause
+#
+# -----------------------------------------------------------------------------
+import math
+import os
+from typing import Callable, Optional, Type, Union
 
-Exporting ...
-[Warning]: The subfunction feature is experimental. Please note that using compile consecutively with and without subfunction may produce inconsistent results.
-W0607 03:04:47.945000 26536 torch/onnx/_internal/exporter/_registration.py:107] torchvision is not installed. Skipping torchvision::nms
-W0607 03:04:47.946000 26536 torch/onnx/_internal/exporter/_registration.py:107] torchvision is not installed. Skipping torchvision::roi_align
-W0607 03:04:47.946000 26536 torch/onnx/_internal/exporter/_registration.py:107] torchvision is not installed. Skipping torchvision::roi_pool
-[torch.onnx] Obtain model graph for `QEffGptOssForCausalLM([...]` with `torch.export.export(..., strict=False)`...
-`use_return_dict` is deprecated! Use `return_dict` instead!
-[Warning]: While compiling, we found certain side effects happened in the model.forward. Here are the list of potential sources you can double check: ["L['kwargs']['past_key_value'].key_cache", "L['kwargs']['past_key_value'].value_cache"]
-[torch.onnx] Obtain model graph for `QEffGptOssForCausalLM([...]` with `torch.export.export(..., strict=False)`... ❌
-[torch.onnx] Obtain model graph for `QEffGptOssForCausalLM([...]` with `torch.export.export(..., strict=True)`...
-[torch.onnx] Obtain model graph for `QEffGptOssForCausalLM([...]` with `torch.export.export(..., strict=True)`... ❌
-ERROR - QEfficient.base.modeling_qeff - ONNX export or transforms failed: Failed to export the model with torch.export. This is step 1/3 of exporting the model to ONNX. Next steps:
-- Modify the model code for `torch.export.export` to succeed. Refer to https://pytorch.org/docs/stable/generated/exportdb/index.html for more information.
-- Debug `torch.export.export` and submit a PR to PyTorch.
-- Create an issue in the PyTorch GitHub repository against the *torch.export* component and attach the full error stack as well as reproduction scripts.
+import torch
+from torch import nn
+from torch.nn import functional as F
+from transformers.cache_utils import Cache
+from transformers.modeling_outputs import (
+    MoeCausalLMOutputWithPast,
+    MoeModelOutputWithPast,
+)
+from transformers.models.gpt_oss.modeling_gpt_oss import (
+    GptOssAttention,
+    GptOssConfig,
+    GptOssDecoderLayer,
+    GptOssExperts,
+    GptOssForCausalLM,
+    GptOssMLP,
+    GptOssModel,
+    GptOssRotaryEmbedding,
+    repeat_kv,
+)
+from transformers.processing_utils import Unpack
+from transformers.utils import TransformersKwargs
 
-## Exception summary
+from QEfficient.blocking.attention_blocking import (
+    AttentionBlockingConfig,
+    BlockingMode,
+    generic_blocked_attention_interface,
+    past_key_value_update,
+)
+from QEfficient.customop.ctx_scatter_gather import (
+    CtxGatherFunc3DGeneralized,
+    CtxScatterFunc3DGeneralized,
+    CtxScatterFunc3DInt,
+)
+from QEfficient.transformers.cache_utils import QEffHybridCacheForGPTOSS
+from QEfficient.transformers.modeling_attn_mask_utils import _create_causal_mask
+from QEfficient.utils.constants import MIN_MASKED_ATTENTION_VALUE
+from QEfficient.utils.logging_utils import logger
 
-<class 'TypeError'>: forward() missing 1 required positional argument: 'arg26_1'
 
-(Refer to the full stack trace above for more information.)  (modeling_qeff.py:562)
-Traceback (most recent call last):
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/onnx/_internal/exporter/_capture_strategies.py", line 140, in __call__
-    exported_program = self._capture(model, args, kwargs, dynamic_shapes)
-                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/onnx/_internal/exporter/_capture_strategies.py", line 240, in _capture
-    return torch.export.export(
-           ^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/export/__init__.py", line 205, in export
-    raise e
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/export/__init__.py", line 171, in export
-    return _export(
-           ^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 1344, in wrapper
-    raise e
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 1310, in wrapper
-    ep = fn(*args, **kwargs)
-         ^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/export/exported_program.py", line 124, in wrapper
-    return fn(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_utils_internal.py", line 96, in wrapper_function
-    return function(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 2512, in _export
-    ep = _export_for_training(
-         ^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 1344, in wrapper
-    raise e
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 1310, in wrapper
-    ep = fn(*args, **kwargs)
-         ^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/export/exported_program.py", line 124, in wrapper
-    return fn(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 2300, in _export_for_training
-    export_artifact = export_func(
-                      ^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 2229, in _non_strict_export
-    aten_export_artifact = _to_aten_func(
-                           ^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 2006, in _export_to_aten_ir_make_fx
-    gm, graph_signature = transform(_make_fx_helper)(
-                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 2136, in _aot_export_non_strict
-    gm, sig = aot_export(stack, wrapped_mod, args, kwargs=kwargs, **flags)
-              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 1914, in _make_fx_helper
-    gm = make_fx(
-         ^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 3061, in wrapped
-    return make_fx_tracer.trace(f, *args)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 2963, in trace
-    return self._trace_inner(f, *args)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 2924, in _trace_inner
-    t = dispatch_trace(
-        ^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_compile.py", line 54, in inner
-    return disable_fn(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_dynamo/eval_frame.py", line 1445, in _fn
-    return fn(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 1691, in dispatch_trace
-    graph = tracer.trace(root, concrete_args)  # type: ignore[arg-type]
-            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 2498, in trace
-    res = super().trace(root, concrete_args)
-          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 914, in trace
-    (self.create_arg(fn(*args)),),
-                     ^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 1761, in wrapped
-    out = f(*tensors)  # type:ignore[call-arg]
-          ^^^^^^^^^^^
-  File "<string>", line 1, in <lambda>
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 1798, in wrapped_fn
-    return tuple(flat_fn(*args))
-                 ^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_functorch/_aot_autograd/utils.py", line 192, in flat_fn
-    tree_out = fn(*args, **kwargs)
-               ^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_functorch/_aot_autograd/graph_capture_wrappers.py", line 1536, in functional_call
-    out = mod(*args[params_len:], **kwargs)
-          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 888, in module_call_wrapper
-    return self.call_module(mod, forward, args, kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 2587, in call_module
-    return Tracer.call_module(self, m, forward, args, kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 577, in call_module
-    ret_val = forward(*args, **kwargs)
-              ^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 881, in forward
-    return _orig_module_call(mod, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
-    return self._call_impl(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
-    return forward_call(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 2120, in forward
-    tree_out = mod(*args, **kwargs)
-               ^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 888, in module_call_wrapper
-    return self.call_module(mod, forward, args, kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 2587, in call_module
-    return Tracer.call_module(self, m, forward, args, kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 577, in call_module
-    ret_val = forward(*args, **kwargs)
-              ^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 881, in forward
-    return _orig_module_call(mod, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
-    return self._call_impl(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
-    return forward_call(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/QEfficient/transformers/models/gpt_oss/modeling_gpt_oss.py", line 1282, in forward
-    outputs: MoeModelOutputWithPast = self.model(
-                                      ^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 888, in module_call_wrapper
-    return self.call_module(mod, forward, args, kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 2587, in call_module
-    return Tracer.call_module(self, m, forward, args, kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 577, in call_module
-    ret_val = forward(*args, **kwargs)
-              ^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 881, in forward
-    return _orig_module_call(mod, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
-    return self._call_impl(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
-    return forward_call(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/QEfficient/transformers/models/gpt_oss/modeling_gpt_oss.py", line 1184, in forward
-    layer_outputs = decoder_layer(
-                    ^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/transformers/modeling_layers.py", line 93, in __call__
-    return super().__call__(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 888, in module_call_wrapper
-    return self.call_module(mod, forward, args, kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 2587, in call_module
-    return Tracer.call_module(self, m, forward, args, kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 577, in call_module
-    ret_val = forward(*args, **kwargs)
-              ^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 881, in forward
-    return _orig_module_call(mod, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
-    return self._call_impl(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
-    return forward_call(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/invoke_subgraph.py", line 438, in inner
-    return invoke_subgraph_placeholder(inner_func, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/invoke_subgraph.py", line 401, in invoke_subgraph_placeholder
-    return _hop_compile_and_call(
-           ^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/utils.py", line 113, in _hop_compile_and_call
-    return torch.compile(fn, backend=backend, fullgraph=True)(
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_dynamo/eval_frame.py", line 1166, in compile_wrapper
-    result = fn(*args, **kwargs)
-             ^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/invoke_subgraph.py", line 396, in _invoke_subgraph_placeholder_wrapper
-    def _invoke_subgraph_placeholder_wrapper(func, args, kwargs):
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_dynamo/eval_frame.py", line 1445, in _fn
-    return fn(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_dynamo/backends/debugging.py", line 87, in wrapper
-    return gm.forward(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_lazy_graph_module.py", line 134, in _lazy_forward
-    return self(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/graph_module.py", line 1000, in call_wrapped
-    return self._wrapped_call(self, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/graph_module.py", line 507, in __call__
-    raise e
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/graph_module.py", line 493, in __call__
-    return super(self.cls, obj).__call__(*args, **kwargs)  # type: ignore[misc]
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 888, in module_call_wrapper
-    return self.call_module(mod, forward, args, kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 2584, in call_module
-    return forward(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 881, in forward
-    return _orig_module_call(mod, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
-    return self._call_impl(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
-    return forward_call(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "<eval_with_key>.15", line 32, in forward
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/invoke_subgraph.py", line 258, in __call__
-    return super().__call__(subgraph, identifier, *operands)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_ops.py", line 534, in __call__
-    return torch.overrides.handle_torch_function(
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/overrides.py", line 1779, in handle_torch_function
-    result = mode.__torch_function__(public_api, types, args, kwargs)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 1823, in __torch_function__
-    return func(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/invoke_subgraph.py", line 258, in __call__
-    return super().__call__(subgraph, identifier, *operands)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_ops.py", line 534, in __call__
-    return torch.overrides.handle_torch_function(
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/overrides.py", line 1779, in handle_torch_function
-    result = mode.__torch_function__(public_api, types, args, kwargs)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 1910, in __torch_function__
-    return func(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/invoke_subgraph.py", line 258, in __call__
-    return super().__call__(subgraph, identifier, *operands)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_ops.py", line 534, in __call__
-    return torch.overrides.handle_torch_function(
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/overrides.py", line 1779, in handle_torch_function
-    result = mode.__torch_function__(public_api, types, args, kwargs)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_export/non_strict_utils.py", line 1169, in __torch_function__
-    return func(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/invoke_subgraph.py", line 258, in __call__
-    return super().__call__(subgraph, identifier, *operands)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_ops.py", line 539, in __call__
-    return self.dispatch(dispatch_key_set.highestPriorityTypeId(), *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_ops.py", line 505, in dispatch
-    return handler(mode, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/invoke_subgraph.py", line 1263, in _
-    example_out = invoke_subgraph(graph, identifier, *operands)
-                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/invoke_subgraph.py", line 258, in __call__
-    return super().__call__(subgraph, identifier, *operands)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_ops.py", line 539, in __call__
-    return self.dispatch(dispatch_key_set.highestPriorityTypeId(), *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_ops.py", line 386, in dispatch
-    return kernel(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_ops.py", line 341, in maybe_run_autograd
-    schema = self.gen_schema(*args, **kwargs)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/invoke_subgraph.py", line 295, in gen_schema
-    gm = materialize_as_graph(
-         ^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/utils.py", line 1323, in materialize_as_graph
-    gm = _materialize_as_graph_inner()
-         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_dynamo/eval_frame.py", line 1445, in _fn
-    return fn(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/utils.py", line 1319, in _materialize_as_graph_inner
-    return _maybe_reenter_make_fx(
-           ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/utils.py", line 137, in wrapped
-    gm = _CURRENT_MAKE_FX_TRACER.trace_subgraph(
-         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 2987, in trace_subgraph
-    return sub_tracer._trace_inner(f, *args)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 2924, in _trace_inner
-    t = dispatch_trace(
-        ^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_compile.py", line 54, in inner
-    return disable_fn(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_dynamo/eval_frame.py", line 1445, in _fn
-    return fn(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 1691, in dispatch_trace
-    graph = tracer.trace(root, concrete_args)  # type: ignore[arg-type]
-            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 2498, in trace
-    res = super().trace(root, concrete_args)
-          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_dynamo/eval_frame.py", line 1445, in _fn
-    return fn(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 914, in trace
-    (self.create_arg(fn(*args)),),
-                     ^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 1761, in wrapped
-    out = f(*tensors)  # type:ignore[call-arg]
-          ^^^^^^^^^^^
-  File "<string>", line 1, in <lambda>
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/graph_module.py", line 1000, in call_wrapped
-    return self._wrapped_call(self, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/graph_module.py", line 507, in __call__
-    raise e
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/graph_module.py", line 493, in __call__
-    return super(self.cls, obj).__call__(*args, **kwargs)  # type: ignore[misc]
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 888, in module_call_wrapper
-    return self.call_module(mod, forward, args, kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 2584, in call_module
-    return forward(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 881, in forward
-    return _orig_module_call(mod, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
-    return self._call_impl(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
-    return forward_call(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-TypeError: forward() missing 1 required positional argument: 'arg26_1'
+class QEffGptOssExperts(GptOssExperts):
+    def __qeff_init__(self):
+        self.gate_proj = nn.Parameter(torch.empty(self.num_experts, self.hidden_size, self.expert_dim))
+        self.up_proj = nn.Parameter(torch.empty(self.num_experts, self.hidden_size, self.expert_dim))
+        self.gate_proj_bias = nn.Parameter(torch.empty(self.num_experts, self.expert_dim))
+        self.up_proj_bias = nn.Parameter(torch.empty(self.num_experts, self.expert_dim))
 
-The above exception was the direct cause of the following exception:
 
-Traceback (most recent call last):
-  File "/home/amarshar/weightfree-tf5/QEfficient/utils/export_utils.py", line 209, in wrapper
-    onnx_path = func(self, *args, **kwargs)
-                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/QEfficient/base/modeling_qeff.py", line 563, in _export
-    raise e
-  File "/home/amarshar/weightfree-tf5/QEfficient/base/modeling_qeff.py", line 461, in _export
-    ) = export_weight_free_onnx(
-        ^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/QEfficient/exporter/weight_free.py", line 273, in export_weight_free_onnx
-    onnx_program = torch.onnx.export(
-                   ^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/onnx/__init__.py", line 291, in export
-    return _compat.export_compat(
-           ^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/onnx/_internal/exporter/_compat.py", line 161, in export_compat
-    onnx_program = _core.export(
-                   ^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/onnx/_internal/exporter/_flags.py", line 27, in wrapper
-    return func(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/onnx/_internal/exporter/_core.py", line 1473, in export
-    raise _errors.TorchExportError(
-torch.onnx._internal.exporter._errors.TorchExportError: Failed to export the model with torch.export. This is step 1/3 of exporting the model to ONNX. Next steps:
-- Modify the model code for `torch.export.export` to succeed. Refer to https://pytorch.org/docs/stable/generated/exportdb/index.html for more information.
-- Debug `torch.export.export` and submit a PR to PyTorch.
-- Create an issue in the PyTorch GitHub repository against the *torch.export* component and attach the full error stack as well as reproduction scripts.
 
-## Exception summary
+def _build_matched_idx_from_cumsum(T2Ei: torch.Tensor) -> torch.Tensor:
+    """Build packed->original token index"""
+    batch_size, seq_len = T2Ei.shape
+    int32_max = torch.iinfo(torch.int32).max
+    int32_max_scalar = torch.tensor(int32_max, dtype=torch.int32, device=T2Ei.device)
+    token_idx = torch.arange(seq_len, dtype=torch.int32, device=T2Ei.device).unsqueeze(0).expand(batch_size, -1)
+    valid_prefix = torch.cumsum(T2Ei.to(torch.int32), dim=1)
+    valid_dest = valid_prefix - 1
+    scatter_pos = torch.where(T2Ei, valid_dest, int32_max_scalar)
+    matched_idx = torch.full_like(token_idx, int32_max)
+    matched_idx = CtxScatterFunc3DInt.apply(
+        matched_idx.unsqueeze(-1),
+        scatter_pos,
+        token_idx.unsqueeze(-1),
+    ).squeeze(-1)
+    return matched_idx
 
-<class 'TypeError'>: forward() missing 1 required positional argument: 'arg26_1'
 
-(Refer to the full stack trace above for more information.)
+def _cumsum_scatter_gather_update_gptoss_expert_blocked(
+    x: torch.Tensor,
+    T2Ei: torch.Tensor,
+    W_g: torch.Tensor,
+    W_u: torch.Tensor,
+    W_d: torch.Tensor,
+    b_g: torch.Tensor,
+    b_u: torch.Tensor,
+    b_d: torch.Tensor,
+    routing_weight: torch.Tensor,
+    expert_out: torch.Tensor,
+    limit: float,
+    alpha: float,
+    T: int,
+    packed_chunk_size: int,
+    num_expert_chunks: Optional[int] = None,
+) -> torch.Tensor:
+    """Cumsum-scatter-gather-update expert helper for GPT-OSS NSP-blocked dispatch.
 
-The above exception was the direct cause of the following exception:
+    Same algorithm as the Qwen3-MOE version but with GPT-OSS biases and GLU
+    activation (clamped gate/up, ``(up + 1) * gate * sigmoid(gate * alpha)``).
 
-Traceback (most recent call last):
-  File "/home/amarshar/weightfree-tf5/examples/text_generation/compare.py", line 208, in <module>
-    qeff_model.export(
-  File "/home/amarshar/weightfree-tf5/QEfficient/transformers/models/modeling_auto.py", line 3572, in export
-    return self._export(
-           ^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/QEfficient/utils/export_utils.py", line 212, in wrapper
-    raise RuntimeError(
-RuntimeError: Export failed with use_dynamo=True and use_onnx_subfunctions=True while nested compile regions were enabled for repeated-subgraph extraction (TorchExportError: Failed to export the model with torch.export. This is step 1/3 of exporting the model to ONNX. Next steps:
-- Modify the model code for `torch.export.export` to succeed. Refer to https://pytorch.org/docs/stable/generated/exportdb/index.html for more information.
-- Debug `torch.export.export` and submit a PR to PyTorch.
-- Create an issue in the PyTorch GitHub repository against the *torch.export* component and attach the full error stack as well as reproduction scripts.
+    Shapes:
+        x               : [T, H]
+        T2Ei            : [num_nsp, T]            (bool)
+        W_g, W_u        : [num_nsp, H, I]
+        W_d             : [num_nsp, I, H]
+        b_g, b_u        : [num_nsp, I]
+        b_d             : [num_nsp, H]
+        routing_weight  : [num_nsp, T]
+        expert_out      : [num_nsp, T, H]         (accumulator, in-out)
+    """
+    batch_size, seq_len = T2Ei.shape
+    # num_expert_chunks controls loop iteration count (unrolled at trace time).
+    # packed_chunk_size = seq_len // num_expert_chunks is computed via ONNX
+    # Shape+Div ops → DYNAMIC at runtime (scales with actual seq_len).
+    # Trace time: seq_len=32 → pcs=16 (valid slice)
+    # Runtime:    seq_len=512 → pcs=256 (correct size) ✅
+    if num_expert_chunks is not None:
+        packed_chunk_size = seq_len // num_expert_chunks
+    else:
+        packed_chunk_size = max(1, min(packed_chunk_size, seq_len))
+        num_expert_chunks = seq_len // packed_chunk_size
 
-## Exception summary
+    matched_idx = _build_matched_idx_from_cumsum(T2Ei)
+    valid_rows = torch.einsum("ij->i", T2Ei.to(torch.int32)).unsqueeze(1)
+    x_expanded = x.unsqueeze(0).expand(batch_size, -1, -1)
+    rw_expanded = routing_weight.unsqueeze(-1)
 
-<class 'TypeError'>: forward() missing 1 required positional argument: 'arg26_1'
+    for chunk_idx in range(num_expert_chunks):
+        packed_start = chunk_idx * packed_chunk_size
+        packed_stop  = packed_start + packed_chunk_size if chunk_idx < num_expert_chunks - 1 else seq_len
+        chunk_size   = packed_stop - packed_start
+        chunk_matched_idx = matched_idx[:, packed_start:packed_stop]
 
-(Refer to the full stack trace above for more information.)). Retry export with use_onnx_subfunctions=False for this model/runtime.
+        x_chunk = CtxGatherFunc3DGeneralized.apply(x_expanded, chunk_matched_idx)
+
+        gate = (x_chunk @ W_g) + b_g.unsqueeze(1)
+        up = (x_chunk @ W_u) + b_u.unsqueeze(1)
+        gate = gate.clamp(min=torch.finfo(torch.float16).min, max=limit)
+        up = up.clamp(min=-limit, max=limit)
+        glu = gate * torch.sigmoid(gate * alpha)
+        intermediate = (up + 1) * glu
+        down_chunk = (intermediate @ W_d) + b_d.unsqueeze(1)
+
+        rw_chunk = CtxGatherFunc3DGeneralized.apply(rw_expanded, chunk_matched_idx)
+        down_chunk = down_chunk * rw_chunk
+
+        expert_out_chunk = CtxGatherFunc3DGeneralized.apply(expert_out, chunk_matched_idx)
+        updated_chunk = expert_out_chunk + down_chunk
+
+        row_range = torch.arange(chunk_size, dtype=torch.int32, device=x.device).unsqueeze(0)
+        rows_remaining = valid_rows - packed_start
+        chunk_valid_rows = torch.where(rows_remaining < 0, torch.zeros_like(rows_remaining), rows_remaining)
+        chunk_valid_rows = torch.where(
+            chunk_valid_rows > chunk_size,
+            torch.ones_like(chunk_valid_rows) * chunk_size,
+            chunk_valid_rows,
+        )
+        updated_chunk = torch.where(
+            (row_range < chunk_valid_rows).unsqueeze(-1), updated_chunk, torch.zeros_like(updated_chunk)
+        )
+        expert_out = CtxScatterFunc3DGeneralized.apply(expert_out, chunk_matched_idx, updated_chunk)
+
+    return expert_out
+
+
+class QEffPrefillOnlyChunkedGptOssMLP(GptOssMLP):
+    supports_moe_prefill_blocking = True
+
+    def _forward_expert_blocked(
+        self, x: torch.Tensor, routing_weights: torch.Tensor, num_expert_chunks: Optional[int] = None
+    ) -> torch.Tensor:
+        T, H = x.shape
+        num_nsp = self.expert_blocking_num_nsp
+        num_experts = self.experts.num_experts
+        if num_experts % num_nsp != 0:
+            raise ValueError(f"num_experts ({num_experts}) must be divisible by expert_blocking_num_nsp ({num_nsp})")
+
+        local_experts = num_experts // num_nsp
+        expert_dim = self.experts.expert_dim
+        routing_weights_by_expert = (
+            routing_weights.transpose(0, 1).contiguous().view(local_experts, num_nsp, T).transpose(0, 1).contiguous()
+        )
+        W_g = self.experts.gate_proj.view(local_experts, num_nsp, H, expert_dim).transpose(0, 1).contiguous()
+        W_u = self.experts.up_proj.view(local_experts, num_nsp, H, expert_dim).transpose(0, 1).contiguous()
+        W_d = self.experts.down_proj.view(local_experts, num_nsp, expert_dim, H).transpose(0, 1).contiguous()
+        b_g = self.experts.gate_proj_bias.view(local_experts, num_nsp, expert_dim).transpose(0, 1).contiguous()
+        b_u = self.experts.up_proj_bias.view(local_experts, num_nsp, expert_dim).transpose(0, 1).contiguous()
+        b_d = self.experts.down_proj_bias.view(local_experts, num_nsp, H).transpose(0, 1).contiguous()
+
+        expert_out = x.new_zeros((num_nsp, T, H))
+        for local_slot in range(local_experts):
+            routing_weight = routing_weights_by_expert[:, local_slot, :]
+            T2Ei = routing_weight > 0
+            expert_out = _cumsum_scatter_gather_update_gptoss_expert_blocked(
+                x=x,
+                T2Ei=T2Ei,
+                W_g=W_g[:, local_slot],
+                W_u=W_u[:, local_slot],
+                W_d=W_d[:, local_slot],
+                b_g=b_g[:, local_slot],
+                b_u=b_u[:, local_slot],
+                b_d=b_d[:, local_slot],
+                routing_weight=routing_weight,
+                expert_out=expert_out,
+                limit=self.experts.limit,
+                alpha=self.experts.alpha,
+                T=T,
+                packed_chunk_size=self.expert_blocking_packed_chunk_size,
+                num_expert_chunks=self.expert_blocking_num_packed_chunks,
+            )
+
+        return torch.einsum("ijk->jk", expert_out)
+
+    def forward(self, hidden: torch.Tensor):
+        B, S, H = hidden.shape
+        T = B * S
+        hidden = hidden.view(T, H)
+
+        # Router computation
+        router_logits = F.linear(hidden, self.router.weight, self.router.bias)
+
+        # Top-k selection
+        top_w, top_i = torch.topk(router_logits, self.router.top_k, dim=-1)  # both [T, K]
+        top_w = torch.nn.functional.softmax(top_w, dim=1, dtype=top_w.dtype)
+
+        masked_logits = torch.zeros_like(router_logits)
+        masked_logits.scatter_(1, top_i, top_w)
+
+        # Routing weights for each expert [T, E]
+        routing_weights = masked_logits
+
+        if getattr(self, "supports_moe_prefill_blocking", False) and hasattr(self, "expert_blocking_num_nsp") and self.experts.num_experts % self.expert_blocking_num_nsp == 0:
+            expert_out = self._forward_expert_blocked(x=hidden, routing_weights=routing_weights)
+            return expert_out.view(B, S, H), router_logits
+
+        # ────────────────── allocate the output tensor ─────
+        expert_out = hidden.new_zeros((T, H))  # accumulation buffer
+
+        # ───────────────────────── Expert computation loop ─────────────────────────────
+        for e in range(self.experts.num_experts):
+            routing_weight = routing_weights[:, e].unsqueeze(-1)  # [T, 1]
+
+            W_g, W_u = self.experts.gate_proj[e], self.experts.up_proj[e]  # [H, I], [H, I]
+            b_g, b_u = self.experts.gate_proj_bias[e], self.experts.up_proj_bias[e]  # [I], [I]
+            W_d = self.experts.down_proj[e]  # [I, H]
+            b_d = self.experts.down_proj_bias[e]  # [H]
+
+            # Gate and Up projections
+            gate = (hidden @ W_g) + b_g  # [T, I]
+            up = (hidden @ W_u) + b_u  # [T, I]
+
+            # Apply GptOss activation with clamping
+            gate = gate.clamp(min=torch.finfo(torch.float16).min, max=self.experts.limit)
+            up = up.clamp(min=-self.experts.limit, max=self.experts.limit)
+
+            # GLU activation
+            glu = gate * torch.sigmoid(gate * self.experts.alpha)
+            intermediate = (up + 1) * glu  # [T, I]
+
+            # Down projection
+            down_out = (intermediate @ W_d) + b_d  # [T, H]
+
+            # Apply routing weights and accumulate
+            expert_out += down_out * routing_weight
+
+        # original shape [B, S, H]
+        return expert_out.view(B, S, H), router_logits
+
+
+class QEffPrefillOnlyGptOssMLP(GptOssMLP):
+    def forward(self, hidden: torch.Tensor):
+        if os.environ.get("NUM_FFN_BLOCKS", None) is not None:
+            return self.blocked_ffn_forward(hidden)
+        B, S, H = hidden.shape
+        T = B * S
+        hidden = hidden.view(T, H)
+
+        # Router computation
+        router_logits = F.linear(hidden, self.router.weight, self.router.bias)
+
+        # Top-k selection
+        top_w, top_i = torch.topk(router_logits, self.router.top_k, dim=-1)  # both [T, K]
+        top_w = torch.nn.functional.softmax(top_w, dim=1, dtype=top_w.dtype)
+
+        masked_logits = torch.zeros_like(router_logits)
+        masked_logits.scatter_(1, top_i, top_w)
+
+        # Routing weights for each expert [T, E]
+        routing_weights = masked_logits
+
+        # ────────────────── allocate the output tensor ─────
+        expert_out = hidden.new_zeros((T, H))  # accumulation buffer
+
+        # ───────────────────────── Expert computation loop ─────────────────────────────
+        for e in range(self.experts.num_experts):
+            routing_weight = routing_weights[:, e].unsqueeze(-1)  # [T, 1]
+
+            W_g, W_u = self.experts.gate_proj[e], self.experts.up_proj[e]  # [H, I], [H, I]
+            b_g, b_u = self.experts.gate_proj_bias[e], self.experts.up_proj_bias[e]  # [I], [I]
+            W_d = self.experts.down_proj[e]  # [I, H]
+            b_d = self.experts.down_proj_bias[e]  # [H]
+
+            # Gate and Up projections
+            gate = (hidden @ W_g) + b_g  # [T, I]
+            up = (hidden @ W_u) + b_u  # [T, I]
+
+            # Apply GptOss activation with clamping
+            gate = gate.clamp(min=torch.finfo(torch.float16).min, max=self.experts.limit)
+            up = up.clamp(min=-self.experts.limit, max=self.experts.limit)
+
+            # GLU activation
+            glu = gate * torch.sigmoid(gate * self.experts.alpha)
+            intermediate = (up + 1) * glu  # [T, I]
+
+            # Down projection
+            down_out = (intermediate @ W_d) + b_d  # [T, H]
+
+            # Apply routing weights and accumulate
+            expert_out += down_out * routing_weight
+
+        # original shape [B, S, H]
+        return expert_out.view(B, S, H), router_logits
+
+    def blocked_ffn_forward(self, hidden: torch.Tensor):
+        B, S, H = hidden.shape
+        T = B * S
+        hidden = hidden.view(T, H)
+
+        # Router computation
+        router_logits = F.linear(hidden, self.router.weight, self.router.bias)
+
+        # Top-k selection
+        top_w, top_i = torch.topk(router_logits, self.router.top_k, dim=-1)  # both [T, K]
+        top_w = torch.nn.functional.softmax(top_w, dim=1, dtype=top_w.dtype)
+
+        masked_logits = torch.zeros_like(router_logits)
+        masked_logits.scatter_(1, top_i, top_w)
+
+        # Routing weights for each expert [T, E]
+        routing_weights = masked_logits
+
+        # ────────────────── allocate the output tensor ─────
+        expert_out = hidden.new_zeros((T, H))  # accumulation buffer
+        target_blocks = int(os.environ.get("NUM_FFN_BLOCKS", 1))
+        block_positions = []
+        for j in range(target_blocks):
+            block_positions.append(j * (T // target_blocks))
+        # ───────────────────────── Expert computation loop ─────────────────────────────
+        for e in range(self.experts.num_experts):
+            routing_weight = routing_weights[:, e].unsqueeze(-1)  # [T, 1]
+
+            W_g, W_u = self.experts.gate_proj[e], self.experts.up_proj[e]  # [H, I], [H, I]
+            b_g, b_u = self.experts.gate_proj_bias[e], self.experts.up_proj_bias[e]  # [I], [I]
+            W_d = self.experts.down_proj[e]  # [I, H]
+            b_d = self.experts.down_proj_bias[e]  # [H]
+
+            block_count = 0
+            outs = []
+            for block_idx in range(target_blocks):
+                block_count += 1
+                qi = block_positions[block_idx]
+
+                # Calculate block size (last block should be handled with remainder)
+                if block_idx == target_blocks - 1:
+                    real_q_len = T - qi
+                else:
+                    real_q_len = block_positions[block_idx + 1] - qi
+
+                tgb = hidden[qi : qi + real_q_len, :]
+                # Gate and Up projections
+                # Gate and Up projections
+                gate = (tgb @ W_g) + b_g  # [T, I]
+                up = (tgb @ W_u) + b_u  # [T, I]
+
+                # Apply GptOss activation with clamping
+                gate = gate.clamp(min=torch.finfo(torch.float16).min, max=self.experts.limit)
+                up = up.clamp(min=-self.experts.limit, max=self.experts.limit)
+
+                # GLU activation
+                glu = gate * torch.sigmoid(gate * self.experts.alpha)
+                intermediate = (up + 1) * glu  # [T, I]
+
+                # Down projection
+                down_out_block = (intermediate @ W_d) + b_d  # [T, H]
+
+                outs.append(down_out_block)
+
+            down_out = torch.cat(outs, dim=0)
+
+            # Apply routing weights and accumulate
+            expert_out += down_out * routing_weight
+
+        # original shape [B, S, H]
+        return expert_out.view(B, S, H), router_logits
+
+    def blocked_ffn_forward_block_weights(self, hidden: torch.Tensor):
+        B, S, H = hidden.shape
+        T = B * S
+        hidden = hidden.view(T, H)
+
+        # Router computation
+        router_logits = F.linear(hidden, self.router.weight, self.router.bias)
+
+        # Top-k selection
+        top_w, top_i = torch.topk(router_logits, self.router.top_k, dim=-1)  # both [T, K]
+        top_w = torch.nn.functional.softmax(top_w, dim=1, dtype=top_w.dtype)
+
+        masked_logits = torch.zeros_like(router_logits)
+        masked_logits.scatter_(1, top_i, top_w)
+
+        # Routing weights for each expert [T, E]
+        routing_weights = masked_logits
+
+        # ────────────────── allocate the output tensor ─────
+        expert_out = hidden.new_zeros((T, H))  # accumulation buffer
+        target_blocks = int(os.environ.get("NUM_BLOCKS", 1))
+        block_positions = []
+        for j in range(target_blocks):
+            block_positions.append(j * (T // target_blocks))
+        # ───────────────────────── Expert computation loop ─────────────────────────────
+        for e in range(self.experts.num_experts):
+            routing_weight = routing_weights[:, e].unsqueeze(-1)  # [T, 1]
+
+            W_g, W_u = self.experts.gate_proj[e], self.experts.up_proj[e]  # [H, I], [H, I]
+            b_g, b_u = self.experts.gate_proj_bias[e], self.experts.up_proj_bias[e]  # [I], [I]
+            W_d = self.experts.down_proj[e]  # [I, H]
+            b_d = self.experts.down_proj_bias[e]  # [H]
+
+            block_count = 0
+            outs = []
+            for block_idx in range(target_blocks):
+                block_count += 1
+                qi = block_positions[block_idx]
+
+                # Calculate block size (last block should be handled with remainder)
+                if block_idx == target_blocks - 1:
+                    real_q_len = T - qi
+                else:
+                    real_q_len = block_positions[block_idx + 1] - qi
+
+                tgb = hidden[qi : qi + real_q_len, :]
+                # Gate and Up projections
+
+                wg_col_shape = W_g.shape[1]
+                wg_num_blocks = math.ceil(wg_col_shape / 128)
+                last_block_size = wg_col_shape % 128 if wg_col_shape % 128 != 0 else 128
+
+                intermediates = []
+                for i in range(wg_num_blocks):
+                    if i == wg_num_blocks - 1:
+                        cur_gate = (tgb @ W_g[:, -last_block_size:]) + b_g[-last_block_size:]
+                        cur_up = (tgb @ W_u[:, -last_block_size:]) + b_u[-last_block_size:]
+                    else:
+                        cur_gate = (tgb @ W_g[:, i * 128 : (i + 1) * 128]) + b_g[i * 128 : (i + 1) * 128]
+                        cur_up = (tgb @ W_u[:, i * 128 : (i + 1) * 128]) + b_u[i * 128 : (i + 1) * 128]
+
+                    cur_gate = cur_gate.clamp(min=torch.finfo(torch.float16).min, max=self.experts.limit)
+                    cur_up = cur_up.clamp(min=-self.experts.limit, max=self.experts.limit)
+                    cur_glu = cur_gate * torch.sigmoid(cur_gate * self.experts.alpha)
+                    cur_intermediate = (cur_up + 1) * cur_glu
+                    intermediates.append(cur_intermediate)
+
+                intermediate = torch.cat(intermediates, dim=-1)
+
+                downs = []
+                for i in range(wg_num_blocks):
+                    if i == wg_num_blocks - 1:
+                        downs.append((intermediate @ W_d[:, -last_block_size:]) + b_d[-last_block_size:])
+                    else:
+                        downs.append((intermediate @ W_d[:, i * 128 : (i + 1) * 128]) + b_d[i * 128 : (i + 1) * 128])
+
+                down_out_block = torch.cat(downs, dim=1)
+                outs.append(down_out_block)
+
+            down_out = torch.cat(outs, dim=0)
+
+            # Apply routing weights and accumulate
+            masked_down = torch.where(routing_weight > 0, down_out * routing_weight, torch.zeros_like(expert_out))
+            expert_out += masked_down
+
+        # original shape [B, S, H]
+        return expert_out.view(B, S, H), router_logits
+
+
+class QEffGptOssMLP(GptOssMLP):
+    # ------------------- Gather based, weights as activation approach ---------------
+    def forward_weights_as_activation(self, hidden_states):
+        bs, seq_len, _ = hidden_states.shape
+        hidden_states = hidden_states.view(bs * seq_len, self.experts.hidden_size)
+
+        # Router computation
+        router_logits = F.linear(hidden_states, self.router.weight, self.router.bias)
+        router_top_value, router_indices = torch.topk(router_logits, self.router.top_k, dim=-1)
+        router_top_value = torch.nn.functional.softmax(router_top_value, dim=1, dtype=router_top_value.dtype)
+
+        # GATHER - collect weights for selected experts
+        gate_up_proj = self.experts.gate_up_proj[router_indices.flatten()]
+        gate_up_proj_bias = self.experts.gate_up_proj_bias[router_indices.flatten()]
+        down_proj = self.experts.down_proj[router_indices.flatten()]
+        down_proj_bias = self.experts.down_proj_bias[router_indices.flatten()]
+
+        # Apply Chosen Experts (without routing weights first)
+        # expert_in = hidden_states.repeat_interleave(self.router.top_k, dim=0)
+        # expert_in = expert_in.view(-1, 1, self.experts.hidden_size)
+        # Reshape for bmm: (bs*seq_len*top_k, 1, hidden_size)
+        expert_in = (
+            hidden_states.unsqueeze(1)
+            .expand(-1, self.router.top_k, -1)
+            .contiguous()
+            .view(-1, 1, self.experts.hidden_size)
+        )
+
+        gate_up = torch.bmm(expert_in, gate_up_proj) + gate_up_proj_bias.unsqueeze(1)
+        gate, up = gate_up[..., ::2], gate_up[..., 1::2]
+
+        # Apply activation with clamping
+        gate = gate.clamp(min=None, max=self.experts.limit)
+        up = up.clamp(min=-self.experts.limit, max=self.experts.limit)
+        glu = gate * torch.sigmoid(gate * self.experts.alpha)
+        gated_output = (up + 1) * glu
+
+        experts_out = torch.bmm(gated_output, down_proj) + down_proj_bias.unsqueeze(1)
+        experts_out = experts_out.view(bs * seq_len, self.router.top_k, self.experts.hidden_size)
+
+        # Apply routing weights AFTER expert computation (This is before on Llama4)
+        experts_out = experts_out * router_top_value.unsqueeze(-1)
+        experts_out = experts_out.sum(dim=1)
+
+        return experts_out, router_logits
+
+    # ------------------- Gather based, weights as activation approach, With Seperate Gate, up Projections ---------------
+    def forward(self, hidden_states):
+        bs, seq_len, _ = hidden_states.shape
+        hidden_states = hidden_states.view(bs * seq_len, self.experts.hidden_size)
+
+        # Router computation
+        router_logits = F.linear(hidden_states, self.router.weight, self.router.bias)
+        router_top_value, router_indices = torch.topk(router_logits, self.router.top_k, dim=-1)
+        router_top_value = torch.nn.functional.softmax(router_top_value, dim=1, dtype=router_top_value.dtype)
+
+        # GATHER - collect weights for selected experts (separate gate and up projections)
+        gate_proj = self.experts.gate_proj[router_indices.flatten()]
+        gate_proj_bias = self.experts.gate_proj_bias[router_indices.flatten()]
+        up_proj = self.experts.up_proj[router_indices.flatten()]
+        up_proj_bias = self.experts.up_proj_bias[router_indices.flatten()]
+        down_proj = self.experts.down_proj[router_indices.flatten()]
+        down_proj_bias = self.experts.down_proj_bias[router_indices.flatten()]
+
+        # Reshape for bmm: (bs*seq_len*top_k, 1, hidden_size)
+        expert_in = (
+            hidden_states.unsqueeze(1)
+            .expand(-1, self.router.top_k, -1)
+            .contiguous()
+            .view(-1, 1, self.experts.hidden_size)
+        )
+
+        # Apply gate and up projections separately using bmm
+        gate = torch.bmm(expert_in, gate_proj) + gate_proj_bias.unsqueeze(1)
+        up = torch.bmm(expert_in, up_proj) + up_proj_bias.unsqueeze(1)
+
+        # Apply activation with clamping
+        gate = gate.clamp(min=torch.finfo(torch.float16).min, max=self.experts.limit)
+        up = up.clamp(min=-self.experts.limit, max=self.experts.limit)
+
+        # GLU activation
+        glu = gate * torch.sigmoid(gate * self.experts.alpha)
+        gated_output = (up + 1) * glu
+
+        # Down projection
+        experts_out = torch.bmm(gated_output, down_proj) + down_proj_bias.unsqueeze(1)
+        experts_out = experts_out.view(bs * seq_len, self.router.top_k, self.experts.hidden_size)
+
+        # Apply routing weights AFTER expert computation
+        experts_out = experts_out * router_top_value.unsqueeze(-1)
+        experts_out_sum = torch.einsum("bnd->bd", experts_out)
+        return experts_out_sum, router_logits
+
+    def optimized_moe_forward(self, hidden_states: torch.Tensor):
+        B, S, H = hidden_states.shape
+        T = B * S
+        hidden_states = hidden_states.view(T, H)
+
+        # Router computation
+        router_logits = F.linear(hidden_states, self.router.weight, self.router.bias)
+
+        # Top-k selection
+        top_w, selected_experts = torch.topk(router_logits, self.router.top_k, dim=-1)  # both [T, K]
+        top_w = torch.nn.functional.softmax(top_w, dim=1, dtype=top_w.dtype)
+
+        # Creating experts mask and routing weights masked
+        awesome_experts_mask_1 = (
+            torch.nn.functional.one_hot(selected_experts[:, 0], num_classes=self.experts.num_experts)
+            .bool()
+            .T.unsqueeze(-1)
+        )
+        awesome_experts_mask_2 = (
+            torch.nn.functional.one_hot(selected_experts[:, 1], num_classes=self.experts.num_experts)
+            .bool()
+            .T.unsqueeze(-1)
+        )
+        awesome_experts_mask_3 = (
+            torch.nn.functional.one_hot(selected_experts[:, 2], num_classes=self.experts.num_experts)
+            .bool()
+            .T.unsqueeze(-1)
+        )
+        awesome_experts_mask_4 = (
+            torch.nn.functional.one_hot(selected_experts[:, 3], num_classes=self.experts.num_experts)
+            .bool()
+            .T.unsqueeze(-1)
+        )
+
+        gateupout1 = torch.zeros(hidden_states.shape[0], self.experts.intermediate_size)  # T, hs
+        gateupout2 = torch.zeros(hidden_states.shape[0], self.experts.intermediate_size)  # T, hs
+        gateupout3 = torch.zeros(hidden_states.shape[0], self.experts.intermediate_size)  # T, hs
+        gateupout4 = torch.zeros(hidden_states.shape[0], self.experts.intermediate_size)  # T, hs
+
+        # ───────────────────────── Expert computation loop ─────────────────────────────
+        for e in range(self.experts.num_experts):
+            W_g, W_u = self.experts.gate_proj[e], self.experts.up_proj[e]  # [H, I], [H, I]
+            b_g, b_u = self.experts.gate_proj_bias[e], self.experts.up_proj_bias[e]  # [I], [I]
+
+            # Gate and Up projections
+            gate = (hidden_states @ W_g) + b_g  # [T, I]
+            up = (hidden_states @ W_u) + b_u  # [T, I]
+
+            # Apply GptOss activation with clamping
+            gate = gate.clamp(min=None, max=self.experts.limit)
+            up = up.clamp(min=-self.experts.limit, max=self.experts.limit)
+
+            # GLU activation
+            glu = gate * torch.sigmoid(gate * self.experts.alpha)
+            intermediate = (up + 1) * glu  # [T, I]
+
+            gateupout1 += torch.where(awesome_experts_mask_1[e], intermediate, torch.zeros_like(gateupout1))
+            gateupout2 += torch.where(awesome_experts_mask_2[e], intermediate, torch.zeros_like(gateupout2))
+            gateupout3 += torch.where(awesome_experts_mask_3[e], intermediate, torch.zeros_like(gateupout3))
+            gateupout4 += torch.where(awesome_experts_mask_4[e], intermediate, torch.zeros_like(gateupout4))
+
+        concat_down = torch.zeros((self.router.top_k, T, H))
+        concat_mask = torch.cat(
+            (
+                awesome_experts_mask_1.unsqueeze(0),
+                awesome_experts_mask_2.unsqueeze(0),
+                awesome_experts_mask_3.unsqueeze(0),
+                awesome_experts_mask_4.unsqueeze(0),
+            ),
+            dim=0,
+        )
+
+        concat_gateout = torch.cat(
+            (gateupout1.unsqueeze(0), gateupout2.unsqueeze(0), gateupout3.unsqueeze(0), gateupout4.unsqueeze(0)), dim=0
+        )
+
+        for e in range(self.experts.num_experts):
+            W_d = self.experts.down_proj[e]  # [I, H]
+            b_d = self.experts.down_proj_bias[e]  # [H]
+
+            # Down projection
+            down_out = (concat_gateout @ W_d) + b_d  # [T, H]
+
+            concat_down += torch.where(concat_mask[:, e, :], down_out, torch.zeros_like(concat_down))
+
+        downout1, downout2, downout3, downout4 = concat_down[0], concat_down[1], concat_down[2], concat_down[3]
+        hidden_states = (
+            downout1 * top_w[:, 0].unsqueeze(-1)
+            + downout2 * top_w[:, 1].unsqueeze(-1)
+            + downout3 * top_w[:, 2].unsqueeze(-1)
+            + downout4 * top_w[:, 3].unsqueeze(-1)
+        ).reshape(B, S, H)
+
+        # original shape [B, S, H]
+        return hidden_states, router_logits
+
+
+#  Can be replaced with llama/modeling_llama.py::QEffLlamaRotaryEmbedding but keeping it following transformers ideology
+class QEffGptOssRotaryEmbedding(GptOssRotaryEmbedding):
+    """
+    Copied from LlamaForCausalLM: https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/modeling_llama.py
+    The only differences are:
+    - Add static sin/cos computations.
+    """
+
+    def __init__(self, config: GptOssConfig, device=None):
+        super().__init__(config=config)
+        # Build here to make `torch.jit.trace` work.
+        self._set_cos_sin_cache(
+            seq_len=self.original_max_seq_len, device=self.inv_freq.device, dtype=torch.get_default_dtype()
+        )
+
+    def _set_cos_sin_cache(self, seq_len, device, dtype):
+        self.max_seq_len_cached = seq_len
+        t = torch.arange(self.max_seq_len_cached, device=device, dtype=torch.int64).type_as(self.inv_freq)
+
+        freqs = torch.outer(t, self.inv_freq)
+
+        emb = torch.cat((freqs, freqs), dim=-1)
+        self.register_buffer("cos_cached", emb.cos().to(dtype), persistent=False)
+        self.register_buffer("sin_cached", emb.sin().to(dtype), persistent=False)
+
+
+def rotate_half(x):
+    """Rotates half the hidden dims of the input."""
+    x1 = x[..., : x.shape[-1] // 2]
+    x2 = x[..., x.shape[-1] // 2 :]
+    return torch.cat((-x2, x1), dim=-1)
+
+
+def qeff_apply_rotary_pos_emb(q, k, cos, sin):
+    """Applies Rotary Position Embedding with Multimodal Sections to the query and key tensors (https://qwenlm.github.io/blog/qwen2-vl/).
+
+    Explanation:
+        Multimodal 3D rotary position embedding is an extension to 1D rotary position embedding. The input embedding
+        sequence contains vision (images / videos) embedding and text embedding or just contains text embedding. For
+        vision embedding part, we apply rotary position embedding on temporal, height and width dimension seperately.
+        Here we split the channel dimension to 3 chunks for the temporal, height and width rotary position embedding.
+        For text embedding part, we just apply 1D rotary position embedding. The three rotary position index (temporal,
+        height and width) of text embedding is always the same, so the text embedding rotary position embedding has no
+        difference with modern LLMs.
+
+    Args:
+        q (`torch.Tensor`): The query tensor.
+        k (`torch.Tensor`): The key tensor.
+        cos (`torch.Tensor`): The cosine part of the rotary embedding.
+        sin (`torch.Tensor`): The sine part of the rotary embedding.
+    Returns:
+        `tuple(torch.Tensor)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
+    """
+
+    q_embed = (q * cos) + (rotate_half(q) * sin)
+    k_embed = (k * cos) + (rotate_half(k) * sin)
+
+    return q_embed.to(q.dtype), k_embed.to(k.dtype)
+
+
+def eager_attention_forward(
+    module: nn.Module,
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    attention_mask: Optional[torch.Tensor],
+    scaling: float,
+    dropout: float = 0.0,
+    **kwargs,
+):
+    key_states = repeat_kv(key, module.num_key_value_groups)
+    value_states = repeat_kv(value, module.num_key_value_groups)
+
+    attn_weights = torch.matmul(query, key_states.transpose(2, 3)) * scaling
+    if attention_mask is not None:
+        attn_weights = torch.where(
+            attention_mask, torch.tensor(MIN_MASKED_ATTENTION_VALUE, dtype=module.config.torch_dtype), attn_weights
+        )
+
+    sinks = module.sinks.reshape(1, -1, 1, 1).expand(query.shape[0], -1, query.shape[-2], -1)
+    combined_logits = torch.cat([attn_weights, sinks], dim=-1)
+
+    # This was not in the original implementation and slightly affect results; it prevents overflow in BF16/FP16
+    # when training with bsz>1 we clamp max values.
+    combined_logits = combined_logits - combined_logits.max(dim=-1, keepdim=True).values
+    probs = F.softmax(combined_logits, dim=-1, dtype=combined_logits.dtype)
+    scores = probs[..., :-1]  # we drop the sink here
+    attn_weights = nn.functional.dropout(scores, p=dropout, training=module.training)
+    attn_output = torch.matmul(attn_weights, value_states)
+    attn_output = attn_output.transpose(1, 2).contiguous()
+    return attn_output, attn_weights
+
+
+def opt_eager_attention_forward_blocked(
+    module: nn.Module,
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    attention_mask: Optional[torch.Tensor],
+    scaling: float,
+    **kwargs,
+):
+    key_states = repeat_kv(key, module.num_key_value_groups)
+    value_states = repeat_kv(value, module.num_key_value_groups)
+
+    BS, NH, CL, DH = query.shape
+    target_blocks = int(os.environ.get("NUM_Q_BLOCKS", 1))
+    block_positions = []
+    for j in range(target_blocks):
+        block_positions.append(j * (CL // target_blocks))
+    block_count = 0
+    outs = []
+    for block_idx in range(target_blocks):
+        block_count += 1
+        qi = block_positions[block_idx]
+        # Calculate block size (last block should be handled with remainder)
+
+        if block_idx == target_blocks - 1:
+            real_q_len = CL - qi
+        else:
+            real_q_len = block_positions[block_idx + 1] - qi
+
+        if block_idx == 0:
+            kv_start_idx = 0
+        else:
+            kv_start_idx = qi - 128
+
+        q_block = query[:, :, qi : qi + real_q_len, :]
+        if kwargs.get("sliding_window"):
+            k_block = key_states[:, :, kv_start_idx : qi + real_q_len, :]
+            v_block = value_states[:, :, kv_start_idx : qi + real_q_len, :]
+            attn_mask_block = attention_mask[:, :, qi : qi + real_q_len, kv_start_idx : qi + real_q_len]
+        else:
+            k_block = key_states
+            v_block = value_states
+            attn_mask_block = attention_mask[:, :, qi : qi + real_q_len, :]
+
+        scores = torch.matmul(q_block, k_block.transpose(2, 3)) * scaling
+        curr_attn_weights = torch.where(
+            attn_mask_block, torch.tensor(MIN_MASKED_ATTENTION_VALUE, dtype=module.config.torch_dtype), scores
+        )
+        sinks = module.sinks.reshape(1, -1, 1, 1).expand(
+            curr_attn_weights.shape[0], -1, curr_attn_weights.shape[-2], -1
+        )
+        combined_logits = torch.cat([curr_attn_weights, sinks], dim=-1)
+        combined_logits = combined_logits - combined_logits.max(dim=-1, keepdim=True).values
+        curr_attn_weights = nn.functional.softmax(combined_logits, dim=-1, dtype=torch.float32)
+        curr_attn_weights = curr_attn_weights[..., :-1]
+        out_block = torch.matmul(curr_attn_weights, v_block)
+        outs.append(out_block)
+    output = torch.cat(outs, dim=2)
+
+    output = output.view(BS, NH, CL, DH).transpose(1, 2).contiguous()
+    return output, output
+
+
+class QEffPrefillOnlyChunkedGptOssAttention(GptOssAttention):
+    """Multi-headed attention from 'Attention Is All You Need' paper"""
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        position_embeddings: tuple[torch.Tensor, torch.Tensor],
+        attention_mask: Optional[torch.Tensor],
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[Cache] = None,
+        comp_ctx_lengths: Optional[torch.LongTensor] = None,
+        batch_index: Optional[torch.LongTensor] = None,
+        cache_position: Optional[torch.LongTensor] = None,
+        sliding_mask=None,
+        cos_cached: Optional[torch.Tensor] = None,
+        sin_cached: Optional[torch.Tensor] = None,
+        **kwargs: Unpack[TransformersKwargs],
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        input_shape = hidden_states.shape[:-1]
+        hidden_shape = (*input_shape, -1, self.head_dim)
+        query_states = self.q_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+        hidden_shape = (*input_shape, -1, self.head_dim)
+        key_states = self.k_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+        value_states = self.v_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+        query_states, key_states = qeff_apply_rotary_pos_emb(query_states, key_states, cos_cached, sin_cached)
+
+        if past_key_values is not None:
+            # sin and cos are specific to RoPE models; cache_position needed for the static cache
+            cache_kwargs = {
+                "sin": sin_cached,
+                "cos": cos_cached,
+                "batch_index": batch_index,
+                "position_ids": position_ids,
+                "config": self.config,
+                "is_sliding": self.sliding_window is not None,
+                "sliding_window": self.sliding_window,
+            }
+            if self.sliding_window is not None:
+                key_states, value_states = past_key_values.sliding_window_update_chunked(
+                    key_states, value_states, self.layer_idx, cache_kwargs
+                )
+            else:
+                if comp_ctx_lengths is not None:
+                    attention_mask = attention_mask[:, :, :, : comp_ctx_lengths.shape[-1]]
+                    cache_kwargs["CCL"] = attention_mask.shape[-1]
+                key_states, value_states = past_key_values.full_cache_update_chunked(
+                    key_states, value_states, self.layer_idx, cache_kwargs
+                )
+
+        if self.sliding_window is not None:
+            attention_mask = sliding_mask
+            # positive_pos_ids = torch.where(position_ids<0, 0, position_ids)
+            ctx_len = position_ids.shape[1] + self.sliding_window
+            ctx_indices = torch.arange(ctx_len)
+            first_pos_idx = position_ids[0][0]
+            add_idx = torch.where(first_pos_idx >= self.sliding_window, first_pos_idx - self.sliding_window, 0)
+            # start_idx = torch.where(first_pos_idx>=self.sliding_window, first_pos_idx-self.sliding_window, 0)
+            # end_idx = torch.where(first_pos_idx >= self.sliding_window, first_pos_idx+position_ids.shape[1], position_ids.shape[1]+self.sliding_window)
+            ctx_indices += add_idx
+            attention_mask = attention_mask[:, :, :, ctx_indices]
+        else:
+            attention_mask = attention_mask
+
+        attention_interface: Callable = eager_attention_forward
+        attn_output, attn_weights = attention_interface(
+            self,
+            query_states,
+            key_states,
+            value_states,
+            attention_mask,
+            dropout=0.0 if not self.training else self.attention_dropout,
+            scaling=self.scaling,
+            sliding_window=self.sliding_window,
+            s_aux=self.sinks,  # diff with Llama
+            **kwargs,
+        )
+
+        attn_output = attn_output.reshape(*input_shape, -1).contiguous()
+        attn_output = self.o_proj(attn_output)
+        return attn_output, attn_weights, past_key_values
+
+
+class QEffPrefillOnlyGptOssAttention(GptOssAttention):
+    """Multi-headed attention from 'Attention Is All You Need' paper"""
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        position_embeddings: tuple[torch.Tensor, torch.Tensor],
+        attention_mask: Optional[torch.Tensor],
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[Cache] = None,
+        comp_ctx_lengths: Optional[torch.LongTensor] = None,
+        batch_index: Optional[torch.LongTensor] = None,
+        cache_position: Optional[torch.LongTensor] = None,
+        sliding_mask=None,
+        cos_cached: Optional[torch.Tensor] = None,
+        sin_cached: Optional[torch.Tensor] = None,
+        **kwargs: Unpack[TransformersKwargs],
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        input_shape = hidden_states.shape[:-1]
+        hidden_shape = (*input_shape, -1, self.head_dim)
+        query_states = self.q_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+        hidden_shape = (*input_shape, -1, self.head_dim)
+        key_states = self.k_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+        value_states = self.v_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+        query_states, key_states = qeff_apply_rotary_pos_emb(query_states, key_states, cos_cached, sin_cached)
+
+        if past_key_values is not None:
+            # sin and cos are specific to RoPE models; cache_position needed for the static cache
+            cache_kwargs = {
+                "sin": sin_cached,
+                "cos": cos_cached,
+                "batch_index": batch_index,
+                "position_ids": position_ids,
+                "config": self.config,
+                "is_sliding": self.sliding_window is not None,
+                "sliding_window": past_key_values.sliding_window_len,
+            }
+            if self.sliding_window is not None:
+                sliding_window_len = past_key_values.sliding_window_len
+                short_read_idx = torch.arange(past_key_values.key_cache[self.layer_idx].shape[2])
+                read_idx = short_read_idx + torch.where(
+                    position_ids.max() > sliding_window_len - 1, position_ids.max() - sliding_window_len + 1, 0
+                )
+                # This is a trick to export with seq_len<sliding_window_len
+                read_idx = torch.where(read_idx > position_ids.max(), 0, read_idx)
+                k_cache = key_states[:, :, read_idx, :]
+                v_cache = value_states[:, :, read_idx, :]
+            else:
+                k_cache, v_cache = key_states, value_states
+            _, _ = past_key_values.write_only(k_cache, v_cache, self.layer_idx, cache_kwargs)
+
+        if self.sliding_window is not None:
+            attention_mask = sliding_mask
+        else:
+            attention_mask = attention_mask
+
+        if os.environ.get("ENABLE_OPT_SWA", "0") == "1":
+            attention_interface: Callable = opt_eager_attention_forward_blocked
+        else:
+            attention_interface: Callable = eager_attention_forward
+        attn_output, attn_weights = attention_interface(
+            self,
+            query_states,
+            key_states,
+            value_states,
+            attention_mask,
+            dropout=0.0 if not self.training else self.attention_dropout,
+            scaling=self.scaling,
+            sliding_window=self.sliding_window,
+            s_aux=self.sinks,  # diff with Llama
+            **kwargs,
+        )
+
+        attn_output = attn_output.reshape(*input_shape, -1).contiguous()
+        attn_output = self.o_proj(attn_output)
+        return attn_output, attn_weights, past_key_values
+
+
+class QEffGptOssAttention(GptOssAttention):
+    """Multi-headed attention from 'Attention Is All You Need' paper"""
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        position_embeddings: tuple[torch.Tensor, torch.Tensor],
+        attention_mask: Optional[torch.Tensor],
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[Cache] = None,
+        comp_ctx_lengths: Optional[torch.LongTensor] = None,
+        batch_index: Optional[torch.LongTensor] = None,
+        cache_position: Optional[torch.LongTensor] = None,
+        sliding_mask=None,
+        cos_cached: Optional[torch.Tensor] = None,
+        sin_cached: Optional[torch.Tensor] = None,
+        **kwargs: Unpack[TransformersKwargs],
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        input_shape = hidden_states.shape[:-1]
+        hidden_shape = (*input_shape, -1, self.head_dim)
+
+        query_states = self.q_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+        key_states = self.k_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+        value_states = self.v_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+        past_seen_tokens = past_key_values.get_seq_length(self.layer_idx) if past_key_values is not None else 0
+        query_states, key_states = qeff_apply_rotary_pos_emb(query_states, key_states, cos_cached, sin_cached)
+
+        if self.sliding_window is not None:
+            attention_mask = sliding_mask
+
+        blocking_config = getattr(self, "attn_blocking_config", AttentionBlockingConfig())
+        use_blocking = (
+            blocking_config is not None
+            and (blocking_config.mode != BlockingMode.NONE)
+            and (self.sliding_window is None)
+        )
+        if use_blocking:
+            attn_output, attn_weights = generic_blocked_attention_interface(
+                module=self,
+                query=query_states,
+                key=key_states,
+                value=value_states,
+                attention_mask=attention_mask,
+                scaling=self.scaling,
+                layer_idx=self.layer_idx,
+                past_key_value=past_key_values,
+                blocking_config=blocking_config,
+                comp_ctx_length=comp_ctx_lengths,
+                batch_index=batch_index,
+                position_ids=position_ids,
+                past_seen_tokens=past_seen_tokens,
+                sliding_window=self.sliding_window,
+                sinks=self.sinks,
+            )
+        else:
+            key_states, value_states, _ = past_key_value_update(
+                module=self,
+                key=key_states,
+                value=value_states,
+                attention_mask=attention_mask,
+                past_key_value=past_key_values,
+                comp_ctx_lengths=comp_ctx_lengths,
+                batch_index=batch_index,
+                position_ids=position_ids,
+                sliding_window=self.sliding_window,
+            )
+            attn_output, attn_weights = eager_attention_forward(
+                self,
+                query_states,
+                key_states,
+                value_states,
+                attention_mask,
+                dropout=0.0 if not self.training else self.attention_dropout,
+                scaling=self.scaling,
+                sliding_window=self.sliding_window,
+                s_aux=self.sinks,  # diff with Llama
+                **kwargs,
+            )
+
+        attn_output = attn_output.reshape(*input_shape, -1).contiguous()
+        attn_output = self.o_proj(attn_output)
+        return attn_output, attn_weights, past_key_values
+
+
+class QEffGptOssDecoderLayer(GptOssDecoderLayer):
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_value: Optional[Cache] = None,
+        comp_ctx_lengths: Optional[torch.LongTensor] = None,
+        batch_index: Optional[torch.LongTensor] = None,
+        output_attentions: Optional[bool] = False,
+        use_cache: Optional[bool] = False,
+        cache_position: Optional[torch.LongTensor] = None,
+        position_embeddings: Optional[tuple[torch.Tensor, torch.Tensor]] = None,  # necessary, but kept here for BC
+        sliding_mask=None,
+        sin_cached=None,
+        cos_cached=None,
+        **kwargs: Unpack[TransformersKwargs],
+    ) -> tuple[torch.Tensor]:
+        residual = hidden_states
+        hidden_states = self.input_layernorm(hidden_states)
+        # Self Attention
+        hidden_states, self_attn_weights, present_key_value = self.self_attn(
+            hidden_states=hidden_states,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_values=past_key_value,
+            comp_ctx_lengths=comp_ctx_lengths,
+            batch_index=batch_index,
+            use_cache=use_cache,
+            cache_position=cache_position,
+            position_embeddings=position_embeddings,
+            sliding_mask=sliding_mask,
+            sin_cached=sin_cached,
+            cos_cached=cos_cached,
+            **kwargs,
+        )
+        hidden_states = residual + hidden_states
+
+        # Fully Connected
+        residual = hidden_states
+        hidden_states = self.post_attention_layernorm(hidden_states)
+        hidden_states, _ = self.mlp(hidden_states)  # diff with llama: router scores
+        hidden_states = hidden_states.reshape(residual.shape)
+        hidden_states = residual + hidden_states
+        outputs = (hidden_states,)
+
+        if output_attentions:
+            outputs += (self_attn_weights,)
+
+        if use_cache:
+            outputs += (present_key_value,)
+
+        return outputs
+
+
+class QEffPrefillOnlyGptOssModel(GptOssModel):
+    def __qeff_init__(self):
+        self.rotary_emb = QEffGptOssRotaryEmbedding(config=self.config)
+        self.sin_cached = torch.nn.Parameter(self.rotary_emb.sin_cached * self.rotary_emb.attention_scaling)
+        self.cos_cached = torch.nn.Parameter(self.rotary_emb.cos_cached * self.rotary_emb.attention_scaling)
+
+    def forward(
+        self,
+        input_ids: Optional[torch.LongTensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[Cache] = None,
+        batch_index: Optional[torch.LongTensor] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        cache_position: Optional[torch.LongTensor] = None,
+        **kwargs: Unpack[TransformersKwargs],
+    ) -> MoeModelOutputWithPast:
+        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
+        use_cache = use_cache if use_cache is not None else self.config.use_cache
+
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        if (input_ids is None) ^ (inputs_embeds is not None):
+            raise ValueError("You must specify exactly one of input_ids or inputs_embeds")
+
+        return_legacy_cache = False
+        if use_cache and not isinstance(past_key_values, Cache):
+            return_legacy_cache = True
+            past_key_values = QEffHybridCacheForGPTOSS.from_legacy_cache(self.config, past_key_values)
+
+        if inputs_embeds is None:
+            inputs_embeds = self.embed_tokens(input_ids)
+
+        if cache_position is None:
+            past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
+            cache_position = torch.arange(
+                past_seen_tokens, past_seen_tokens + inputs_embeds.shape[1], device=inputs_embeds.device
+            )
+        if position_ids is None:
+            position_ids = cache_position.unsqueeze(0)
+
+        # target_length = attention_mask.shape[-1] if isinstance(attention_mask, torch.Tensor) else past_seen_tokens
+        causal_mask = _create_causal_mask(position_ids=position_ids, target_length=past_key_values.max_cache_len)
+        sliding_mask = _create_causal_mask(
+            position_ids=position_ids,
+            target_length=past_key_values.max_cache_len,
+            sliding_window=self.config.sliding_window,
+        )
+        hidden_states = inputs_embeds
+
+        # decoder layers
+        all_hidden_states = () if output_hidden_states else None
+        all_self_attns = () if output_attentions else None
+        sin = self.sin_cached[position_ids].unsqueeze(1)
+        cos = self.cos_cached[position_ids].unsqueeze(1)
+
+        for decoder_layer in self.layers:
+            if output_hidden_states:
+                all_hidden_states += (hidden_states,)
+
+            layer_outputs = decoder_layer(
+                hidden_states,
+                attention_mask=causal_mask,
+                position_ids=position_ids,
+                past_key_value=past_key_values,
+                batch_index=batch_index,
+                use_cache=use_cache,
+                output_attentions=output_attentions,
+                cache_position=cache_position,
+                sliding_mask=sliding_mask,
+                sin_cached=sin,
+                cos_cached=cos,
+                **kwargs,
+            )
+            hidden_states = layer_outputs[0]
+
+            if output_attentions:
+                all_self_attns += (layer_outputs[1],)
+
+        hidden_states = self.norm(hidden_states)
+        # add hidden states from the last decoder layer
+        if output_hidden_states:
+            all_hidden_states += (hidden_states,)
+
+        if return_legacy_cache:
+            past_key_values = past_key_values.to_legacy_cache()
+
+        return MoeModelOutputWithPast(
+            last_hidden_state=hidden_states,
+            past_key_values=past_key_values if use_cache else None,
+        )
+
+
+class QEffGptOssModel(GptOssModel):
+    def __qeff_init__(self):
+        self.rotary_emb = QEffGptOssRotaryEmbedding(config=self.config)
+        self.sin_cached = torch.nn.Parameter(self.rotary_emb.sin_cached * self.rotary_emb.attention_scaling)
+        self.cos_cached = torch.nn.Parameter(self.rotary_emb.cos_cached * self.rotary_emb.attention_scaling)
+
+    def forward(
+        self,
+        input_ids: Optional[torch.LongTensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[Cache] = None,
+        comp_ctx_lengths: Optional[torch.LongTensor] = None,
+        batch_index: Optional[torch.LongTensor] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        cache_position: Optional[torch.LongTensor] = None,
+        **kwargs: Unpack[TransformersKwargs],
+    ) -> MoeModelOutputWithPast:
+        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
+        use_cache = use_cache if use_cache is not None else self.config.use_cache
+
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        if (input_ids is None) ^ (inputs_embeds is not None):
+            raise ValueError("You must specify exactly one of input_ids or inputs_embeds")
+
+        return_legacy_cache = False
+        if use_cache and not isinstance(past_key_values, Cache):
+            return_legacy_cache = True
+            past_key_values = QEffHybridCacheForGPTOSS.from_legacy_cache(self.config, past_key_values)
+
+        if inputs_embeds is None:
+            inputs_embeds = self.embed_tokens(input_ids)
+
+        if cache_position is None:
+            past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
+            cache_position = torch.arange(
+                past_seen_tokens, past_seen_tokens + inputs_embeds.shape[1], device=inputs_embeds.device
+            )
+        if position_ids is None:
+            position_ids = cache_position.unsqueeze(0)
+
+        # target_length = attention_mask.shape[-1] if isinstance(attention_mask, torch.Tensor) else past_seen_tokens
+        causal_mask = _create_causal_mask(position_ids=position_ids, target_length=past_key_values.max_cache_len)
+        sliding_mask = _create_causal_mask(
+            position_ids=position_ids,
+            target_length=past_key_values.sliding_window_len,
+            sliding_window=past_key_values.sliding_window_len,
+        )
+
+        hidden_states = inputs_embeds
+
+        # decoder layers
+        all_hidden_states = () if output_hidden_states else None
+        all_self_attns = () if output_attentions else None
+        sin = self.sin_cached[position_ids].unsqueeze(1)
+        cos = self.cos_cached[position_ids].unsqueeze(1)
+
+        for decoder_layer in self.layers:
+            if output_hidden_states:
+                all_hidden_states += (hidden_states,)
+
+            layer_outputs = decoder_layer(
+                hidden_states,
+                attention_mask=causal_mask,
+                position_ids=position_ids,
+                past_key_value=past_key_values,
+                comp_ctx_lengths=comp_ctx_lengths,
+                batch_index=batch_index,
+                use_cache=use_cache,
+                output_attentions=output_attentions,
+                cache_position=cache_position,
+                sliding_mask=sliding_mask,
+                sin_cached=sin,
+                cos_cached=cos,
+                **kwargs,
+            )
+            hidden_states = layer_outputs[0]
+
+            if output_attentions:
+                all_self_attns += (layer_outputs[1],)
+
+        hidden_states = self.norm(hidden_states)
+        # add hidden states from the last decoder layer
+        if output_hidden_states:
+            all_hidden_states += (hidden_states,)
+
+        if return_legacy_cache:
+            past_key_values = past_key_values.to_legacy_cache()
+
+        return MoeModelOutputWithPast(
+            last_hidden_state=hidden_states,
+            past_key_values=past_key_values if use_cache else None,
+        )
+
+
+class QEffGptOssForCausalLM(GptOssForCausalLM):
+    def get_submodules_for_export(self) -> Type[nn.Module]:
+        """
+        Return the set of class used as the repeated layer across the model for subfunction extraction.
+
+        Notes:
+            This method should return the *class object* (not an instance).
+            Downstream code can use this to find/build subfunctions for repeated blocks.
+        """
+        return {QEffGptOssDecoderLayer}
+
+    def forward(
+        self,
+        input_ids: Optional[torch.LongTensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[Cache] = None,
+        comp_ctx_lengths: Optional[torch.LongTensor] = None,
+        batch_index: Optional[torch.LongTensor] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+        output_router_logits: Optional[bool] = None,
+        cache_position: Optional[torch.LongTensor] = None,
+        logits_to_keep: Union[int, torch.Tensor] = 0,
+        **kwargs: Unpack[TransformersKwargs],
+    ) -> MoeCausalLMOutputWithPast:
+        r"""
+        labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
+            Labels for computing the masked language modeling loss. Indices should either be in `[0, ...,
+            config.vocab_size]` or -100 (see `input_ids` docstring). Tokens with indices set to `-100` are ignored
+            (masked), the loss is only computed for the tokens with labels in `[0, ..., config.vocab_size]`.
+
+        Example:
+
+        ```python
+        >>> from transformers import AutoTokenizer, GptOssForCausalLM
+
+        >>> model = GptOssForCausalLM.from_pretrained("mistralai/GptOss-8x7B-v0.1")
+        >>> tokenizer = AutoTokenizer.from_pretrained("mistralai/GptOss-8x7B-v0.1")
+
+        >>> prompt = "Hey, are you conscious? Can you talk to me?"
+        >>> inputs = tokenizer(prompt, return_tensors="pt")
+
+        >>> # Generate
+        >>> generate_ids = model.generate(inputs.input_ids, max_length=30)
+        >>> tokenizer.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
+        "Hey, are you conscious? Can you talk to me?\nI'm not conscious, but I can talk to you."
+        ```"""
+
+        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        output_router_logits = (
+            output_router_logits if output_router_logits is not None else self.config.output_router_logits
+        )
+
+        # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
+        outputs: MoeModelOutputWithPast = self.model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_values=past_key_values,
+            comp_ctx_lengths=comp_ctx_lengths,
+            batch_index=batch_index,
+            inputs_embeds=inputs_embeds,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            output_router_logits=output_router_logits,
+            return_dict=return_dict,
+            cache_position=cache_position,
+            **kwargs,
+        )
+
+        hidden_states = outputs.last_hidden_state
+
+        logit_index = position_ids.to(torch.int32).argmax(1, keepdim=True)
+        hidden_states = outputs[0][torch.arange(position_ids.shape[0]).view(-1, 1), logit_index]
+        logits = self.lm_head(hidden_states)
+        logits = logits.float()
+
+        return MoeCausalLMOutputWithPast(
+            loss=None,
+            aux_loss=None,
+            logits=logits,
+            past_key_values=outputs.past_key_values,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions,
+            router_logits=outputs.router_logits,
+        )
+
+    def get_pkv_dynamic_axes(self, retain_full_kv: Optional[bool] = False, continuous_batching: Optional[bool] = False):
+        pkv_dynamic_axes = []
+        for layer_type in self.config.layer_types:
+            if layer_type == "sliding_attention" and not retain_full_kv:
+                pkv_dynamic_axes.append(
+                    {0: "full_batch_size" if continuous_batching else "batch_size", 2: "sliding_window"}
+                )
+            else:
+                pkv_dynamic_axes.append({0: "full_batch_size" if continuous_batching else "batch_size", 2: "ctx_len"})
+        return pkv_dynamic_axes
+
+    def get_specializations(
+        self,
+        batch_size: int,
+        prefill_seq_len: int,
+        ctx_len: int,
+        **kwargs,
+    ):
+        batch_size = batch_size if batch_size else 1
+        if kwargs.get("prefill_only") and not kwargs.get("enable_chunking") and ctx_len != prefill_seq_len:
+            ctx_len = prefill_seq_len
+            logger.warning(
+                f"overriding ctx_len={prefill_seq_len}, currently we don't support ctx_len different than prefill_seq_len for prefill_only model"
+            )
+
+        specializations = [
+            {
+                "batch_size": batch_size,
+                "seq_len": prefill_seq_len,
+                "ctx_len": ctx_len,
+                "sliding_window": 128,
+            },
+            {
+                "batch_size": batch_size,
+                "seq_len": 1,
+                "ctx_len": ctx_len,
+                "sliding_window": 128,
+            },
+        ]
+        return specializations
