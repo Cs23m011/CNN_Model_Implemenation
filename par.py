@@ -94,3 +94,34 @@ if __name__ == "__main__":
 
 #python dequantize_gpt_oss.py --model openai/gpt-oss-20b --out gpt-oss-2L --num-layers 2
 #python dequantize_gpt_oss.py --model openai/gpt-oss-20b --out gpt-oss-20b-dequant --dtype bfloat16
+python3 examples/text_generation/dequantize.py --model openai/gpt-oss-20b --out gpt-oss-2L -
+-num-layers 2
+`CLIPImageProcessor` requires torchvision (not installed); falling back to `CLIPImageProcessorPil` for backward compatibility. Install torchvision to use the default backend, or import `CLIPImageProcessorPil` directly to silence this warning.
+`SiglipImageProcessor` requires torchvision (not installed); falling back to `SiglipImageProcessorPil` for backward compatibility. Install torchvision to use the default backend, or import `SiglipImageProcessorPil` directly to silence this warning.
+Loading + dequantizing openai/gpt-oss-20b via QEfficient from_pretrained ...
+`torch_dtype` is deprecated! Use `dtype` instead!
+Loading weights: 100%|████████████████████████████████████████████████████████████████████████████████████| 459/459 [00:03<00:00, 117.64it/s]
+  (smoke test) truncated to 2 layers
+Casting to bfloat16 and saving plain-float checkpoint ...
+Traceback (most recent call last):
+  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/huggingface_hub/dataclasses.py", line 255, in validate
+    validator(self)
+  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/transformers/configuration_utils.py", line 466, in validate_layer_type
+    raise ValueError(
+ValueError: `num_hidden_layers` (2) must be equal to the number of layer types (24)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/amarshar/weightfree-tf5/examples/text_generation/dequantize.py", line 93, in <module>
+    main()
+  File "/home/amarshar/weightfree-tf5/examples/text_generation/dequantize.py", line 79, in main
+    model.save_pretrained(str(out_dir), safe_serialization=True, max_shard_size="5GB")
+  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/transformers/modeling_utils.py", line 3288, in save_pretrained
+    model_to_save.config.save_pretrained(save_directory)
+  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/transformers/configuration_utils.py", line 528, in save_pretrained
+    self.validate()
+  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/huggingface_hub/dataclasses.py", line 257, in validate
+    raise StrictDataclassClassValidationError(validator=validator.__name__, cause=e) from e
+huggingface_hub.errors.StrictDataclassClassValidationError: Class validation error for validator 'validate_layer_type':
+    ValueError: `num_hidden_layers` (2) must be equal to the number of layer types (24)
