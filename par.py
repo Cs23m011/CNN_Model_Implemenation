@@ -451,3 +451,14 @@ class QEffQwen3MoeForCausalLM(Qwen3MoeForCausalLM):
             attentions=outputs.attentions,
             router_logits=outputs.router_logits,
         )
+
+python - <<'PY'
+from safetensors import safe_open
+import glob
+for st in glob.glob("gpt-oss-20b-dequant/*.safetensors"):
+    with safe_open(st, framework="pt") as f:
+        for k in f.keys():
+            if "experts.gate_proj" in k or "experts.up_proj" in k or "experts.gate_up_proj" in k:
+                print(k)
+        break
+PY
