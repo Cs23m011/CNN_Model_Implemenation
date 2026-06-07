@@ -453,130 +453,13 @@ class QEffQwen3MoeForCausalLM(Qwen3MoeForCausalLM):
         )
 
 python - <<'PY'
-from safetensors import safe_open
-import glob
-for st in glob.glob("gpt-oss-20b-dequant/*.safetensors"):
-    with safe_open(st, framework="pt") as f:
-        for k in f.keys():
-            if "experts.gate_proj" in k or "experts.up_proj" in k or "experts.gate_up_proj" in k:
-                print(k)
-        break
+import torch
+from QEfficient.transformers.models.modeling_auto import QEFFAutoModelForCausalLM
+m = QEFFAutoModelForCausalLM.from_pretrained("openai/gpt-oss-20b")  # or your source
+mod = m.model
+# inspect layer 0 experts module
+exp = mod.model.layers[0].mlp.experts
+print("experts attrs with 'down':", [n for n,_ in exp.named_parameters() if "down" in n])
+print("experts attrs with 'gate_up':", [n for n,_ in exp.named_parameters() if "gate_up" in n])
+print("all expert param names:", [n for n,_ in exp.named_parameters()])
 PY
-Here's the output. Key observations:
-
-  - All layers (0–23) have expert weights in this format:
-  model.layers.{N}.mlp.experts.gate_proj
-  model.layers.{N}.mlp.experts.gate_proj_bias
-  model.layers.{N}.mlp.experts.up_proj
-  model.layers.{N}.mlp.experts.up_proj_bias
-  model.layers.{N}.mlp.experts.gate_up_proj_bias
-  - The weights are stored as flat tensors (experts.gate_proj, not experts.0.gate_proj) — meaning all experts are packed into a single tensor
-   per layer.
-  - There is no experts.down_proj in the matching keys (your filter didn't include it, but worth noting separately if needed).
-  - gate_up_proj_bias exists as a combined key alongside the separate gate_proj_bias and up_proj_bias.
-
-python - <<'PY'
-from safetensors import safe_open
-import glob
-for st in glob.glob("gpt-oss-20b-dequant/*.safetensors"):
-    with safe_open(st, framework="pt") as f:
-        for k in f.keys():
-            if "experts.down_proj" in k:
-                print(k, f.get_slice(k).get_shape())
-PY
-python - <<'PY'
-from safetensors import safe_open
-import glob
-for st in glob.glob("gpt-oss-20b-dequant/*.safetensors"):
-    with safe_open(st, framework="pt") as f:
-        for k in f.keys():
-            if "experts.down_proj" in k:
-                print(k, f.get_slice(k).get_shape())
-PY
-model.layers.10.mlp.experts.down_proj_bias [32, 2880]
-model.layers.7.mlp.experts.down_proj_bias [32, 2880]
-model.layers.8.mlp.experts.down_proj_bias [32, 2880]
-model.layers.9.mlp.experts.down_proj_bias [32, 2880]
-model.layers.11.mlp.experts.down_proj_bias [32, 2880]
-model.layers.12.mlp.experts.down_proj_bias [32, 2880]
-model.layers.13.mlp.experts.down_proj_bias [32, 2880]
-model.layers.14.mlp.experts.down_proj_bias [32, 2880]
-model.layers.15.mlp.experts.down_proj_bias [32, 2880]
-model.layers.3.mlp.experts.down_proj_bias [32, 2880]
-model.layers.4.mlp.experts.down_proj_bias [32, 2880]
-model.layers.5.mlp.experts.down_proj_bias [32, 2880]
-model.layers.6.mlp.experts.down_proj_bias [32, 2880]
-model.layers.20.mlp.experts.down_proj_bias [32, 2880]
-model.layers.21.mlp.experts.down_proj_bias [32, 2880]
-model.layers.22.mlp.experts.down_proj_bias [32, 2880]
-model.layers.23.mlp.experts.down_proj_bias [32, 2880]
-model.layers.0.mlp.experts.down_proj_bias [32, 2880]
-model.layers.1.mlp.experts.down_proj_bias [32, 2880]
-model.layers.2.mlp.experts.down_proj_bias [32, 2880]
-model.layers.16.mlp.experts.down_proj_bias [32, 2880]
-model.layers.17.mlp.experts.down_proj_bias [32, 2880]
-model.layers.18.mlp.experts.down_proj_bias [32, 2880]
-model.layers.19.mlp.experts.down_proj_bias [32, 2880]
-python - <<'PY'
-from safetensors import safe_open
-import glob, json
-# 1) Does down_proj (weight) exist ANYWHERE, under any name?
-hits = {}
-for st in sorted(glob.glob("gpt-oss-20b-dequant/*.safetensors")):
-    with safe_open(st, framework="pt") as f:
-        for k in f.keys():
-            if "down_proj" in k:           # broader: catch any naming
-                hits[k] = f.get_slice(k).get_shape()
-for k in sorted(hits):
-    print(k, hits[k])
-print("---")
-# 2) Is there a fused/packed form still present for layer 0?
-with safe_open(sorted(glob.glob("gpt-oss-20b-dequant/*.safetensors"))[0], framework="pt") as f:
-    for k in f.keys():
-        if "layers.0.mlp.experts" in k:
-            print("L0:", k)
-PY
-model.layers.0.mlp.experts.down_proj_bias [32, 2880]
-model.layers.1.mlp.experts.down_proj_bias [32, 2880]
-model.layers.10.mlp.experts.down_proj_bias [32, 2880]
-model.layers.11.mlp.experts.down_proj_bias [32, 2880]
-model.layers.12.mlp.experts.down_proj_bias [32, 2880]
-model.layers.13.mlp.experts.down_proj_bias [32, 2880]
-model.layers.14.mlp.experts.down_proj_bias [32, 2880]
-model.layers.15.mlp.experts.down_proj_bias [32, 2880]
-model.layers.16.mlp.experts.down_proj_bias [32, 2880]
-model.layers.17.mlp.experts.down_proj_bias [32, 2880]
-model.layers.18.mlp.experts.down_proj_bias [32, 2880]
-model.layers.19.mlp.experts.down_proj_bias [32, 2880]
-model.layers.2.mlp.experts.down_proj_bias [32, 2880]
-model.layers.20.mlp.experts.down_proj_bias [32, 2880]
-model.layers.21.mlp.experts.down_proj_bias [32, 2880]
-model.layers.22.mlp.experts.down_proj_bias [32, 2880]
-model.layers.23.mlp.experts.down_proj_bias [32, 2880]
-model.layers.3.mlp.experts.down_proj_bias [32, 2880]
-model.layers.4.mlp.experts.down_proj_bias [32, 2880]
-model.layers.5.mlp.experts.down_proj_bias [32, 2880]
-model.layers.6.mlp.experts.down_proj_bias [32, 2880]
-model.layers.7.mlp.experts.down_proj_bias [32, 2880]
-model.layers.8.mlp.experts.down_proj_bias [32, 2880]
-model.layers.9.mlp.experts.down_proj_bias [32, 2880]
----
-L0: model.layers.0.mlp.experts.down_proj_bias
-L0: model.layers.0.mlp.experts.gate_proj
-L0: model.layers.0.mlp.experts.gate_proj_bias
-L0: model.layers.0.mlp.experts.gate_up_proj_bias
-L0: model.layers.0.mlp.experts.up_proj
-L0: model.layers.0.mlp.experts.up_proj_bias
-(.venv) amarshar@gb-293-blr-04:~/weightfree-tf5$ python - <<'PY'
-import json, glob
-idx = glob.glob("gpt-oss-20b-dequant/*.index.json")
-if idx:
-    m = json.load(open(idx[0]))["weight_map"]
-    dp = {k: v for k, v in m.items() if "experts.down_proj" in k and "bias" not in k}
-    print("down_proj weight entries in index:", len(dp))
-    for k in list(dp)[:3]:
-        print(" ", k, "->", dp[k])
-else:
-    print("no index.json (single-shard model)")
-PY
-down_proj weight entries in index: 0
