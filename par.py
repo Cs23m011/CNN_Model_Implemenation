@@ -14,7 +14,7 @@
 # in `self.layers`. All `self.key_cache[i]` accesses are replaced with property
 # shims so any external caller still works unchanged.
 # ============================================================================
-
+grep -nE "arg26|operand|materialize_as_graph|gen_schema|placeholder|n_operands|num_operands" arg26.log | head -50
 TORCHDYNAMO_VERBOSE=1 TORCH_LOGS="+dynamo,+export" python3 examples/text_generation/compare.py 2>&1 | tee arg26.log
 class _GptOssHybridLayer:
     """Per-layer KV holder. Tensors are ATTRIBUTES (stable across export region
