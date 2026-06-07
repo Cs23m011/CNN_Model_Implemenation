@@ -1,87 +1,92 @@
- python3 /home/amarshar/weightfree-tf5/examples/text_generation/compare.py
-`CLIPImageProcessor` requires torchvision (not installed); falling back to `CLIPImageProcessorPil` for backward compatibility. Install torchvision to use the default backend, or import `CLIPImageProcessorPil` directly to silence this warning.
-`SiglipImageProcessor` requires torchvision (not installed); falling back to `SiglipImageProcessorPil` for backward compatibility. Install torchvision to use the default backend, or import `SiglipImageProcessorPil` directly to silence this warning.
-`torch_dtype` is deprecated! Use `dtype` instead!
-GptOssConfig {
-  "architectures": [
-    "GptOssForCausalLM"
-  ],
-  "attention_bias": true,
-  "attention_dropout": 0.0,
-  "bos_token_id": null,
-  "dtype": "float32",
-  "eos_token_id": 200002,
-  "experts_per_token": 4,
-  "head_dim": 64,
-  "hidden_act": "silu",
-  "hidden_size": 2880,
-  "initial_context_length": 4096,
-  "initializer_range": 0.02,
-  "intermediate_size": 2880,
-  "layer_types": [
-    "sliding_attention",
-    "full_attention",
-    "sliding_attention",
-    "full_attention",
-    "sliding_attention",
-    "full_attention",
-    "sliding_attention",
-    "full_attention",
-    "sliding_attention",
-    "full_attention",
-    "sliding_attention",
-    "full_attention",
-    "sliding_attention",
-    "full_attention",
-    "sliding_attention",
-    "full_attention",
-    "sliding_attention",
-    "full_attention",
-    "sliding_attention",
-    "full_attention",
-    "sliding_attention",
-    "full_attention",
-    "sliding_attention",
-    "full_attention"
-  ],
-  "max_position_embeddings": 131072,
-  "max_seq_len_cached": null,
-  "model_type": "gpt_oss",
-  "num_attention_heads": 64,
-  "num_experts_per_tok": 4,
-  "num_hidden_layers": 2,
-  "num_key_value_heads": 8,
-  "num_local_experts": 32,
-  "output_router_logits": false,
-  "pad_token_id": 199999,
-  "rms_norm_eps": 1e-05,
-  "rope_parameters": {
-    "beta_fast": 32.0,
-    "beta_slow": 1.0,
-    "factor": 32.0,
-    "original_max_position_embeddings": 4096,
-    "rope_theta": 150000,
-    "rope_type": "yarn",
-    "truncate": false
-  },
-  "router_aux_loss_coef": 0.9,
-  "sliding_window": 128,
-  "swiglu_limit": 7.0,
-  "tie_word_embeddings": false,
-  "transformers_version": "5.5.4",
-  "use_cache": true,
-  "vocab_size": 201088
-}
+
+The above exception was the direct cause of the following exception:
 
 Traceback (most recent call last):
-  File "/home/amarshar/weightfree-tf5/examples/text_generation/compare.py", line 196, in <module>
-    qeff_model = QEFFAutoModelForCausalLM(
-                 ^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/QEfficient/transformers/models/modeling_auto.py", line 2965, in __init__
-    super().__init__(model, qaic_config=qaic_config, **kwargs)
-  File "/home/amarshar/weightfree-tf5/QEfficient/base/modeling_qeff.py", line 118, in __init__
-    self.model, transformed = transform.apply(self.model)
-                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/QEfficient/base/pytorch_transforms.py", line 218, in apply
-    experts.gate_proj.data.copy_(gate)
-NotImplementedError: Cannot copy out of meta tensor; no data!
+  File "/home/amarshar/weightfree-tf5/QEfficient/utils/export_utils.py", line 209, in wrapper
+    onnx_path = func(self, *args, **kwargs)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree-tf5/QEfficient/base/modeling_qeff.py", line 563, in _export
+    raise e
+  File "/home/amarshar/weightfree-tf5/QEfficient/base/modeling_qeff.py", line 461, in _export
+    ) = export_weight_free_onnx(
+        ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree-tf5/QEfficient/exporter/weight_free.py", line 273, in export_weight_free_onnx
+    onnx_program = torch.onnx.export(
+                   ^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/onnx/__init__.py", line 291, in export
+    return _compat.export_compat(
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/onnx/_internal/exporter/_compat.py", line 161, in export_compat
+    onnx_program = _core.export(
+                   ^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/onnx/_internal/exporter/_flags.py", line 27, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/onnx/_internal/exporter/_core.py", line 1473, in export
+    raise _errors.TorchExportError(
+torch.onnx._internal.exporter._errors.TorchExportError: Failed to export the model with torch.export. This is step 1/3 of exporting the model to ONNX. Next steps:
+- Modify the model code for `torch.export.export` to succeed. Refer to https://pytorch.org/docs/stable/generated/exportdb/index.html for more information.
+- Debug `torch.export.export` and submit a PR to PyTorch.
+- Create an issue in the PyTorch GitHub repository against the *torch.export* component and attach the full error stack as well as reproduction scripts.
+
+## Exception summary
+
+<class 'torch._dynamo.exc.UncapturedHigherOrderOpError'>: This higher order operator doesn't work unless it is captured completely with torch.compile. Got graph break/error:
+
+ConstantVariable(str: 'too many values to unpack (expected 3)')
+  Higher Order Operator: torch.ops.higher_order.invoke_subgraph
+
+from user code:
+   File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/invoke_subgraph.py", line 397, in _invoke_subgraph_placeholder_wrapper
+    return invoke_subgraph_placeholder(func, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_export/non_strict_utils.py", line 1154, in __torch_function__
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree-tf5/QEfficient/transformers/models/gpt_oss/modeling_gpt_oss.py", line 1093, in forward
+    hidden_states, self_attn_weights, present_key_value = self.self_attn(
+                                                          ^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree-tf5/QEfficient/transformers/models/gpt_oss/modeling_gpt_oss.py", line 1043, in forward
+    key_states, value_states, _ = past_key_value_update(
+
+Set TORCHDYNAMO_VERBOSE=1 for the internal stack trace (please do this especially if you're reporting a bug to PyTorch). For even more developer context, set TORCH_LOGS="+dynamo"
+
+
+(Refer to the full stack trace above for more information.)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/amarshar/weightfree-tf5/examples/text_generation/compare.py", line 208, in <module>
+    qeff_model.export(
+  File "/home/amarshar/weightfree-tf5/QEfficient/transformers/models/modeling_auto.py", line 3572, in export
+    return self._export(
+           ^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree-tf5/QEfficient/utils/export_utils.py", line 212, in wrapper
+    raise RuntimeError(
+RuntimeError: Export failed with use_dynamo=True and use_onnx_subfunctions=True while nested compile regions were enabled for repeated-subgraph extraction (TorchExportError: Failed to export the model with torch.export. This is step 1/3 of exporting the model to ONNX. Next steps:
+- Modify the model code for `torch.export.export` to succeed. Refer to https://pytorch.org/docs/stable/generated/exportdb/index.html for more information.
+- Debug `torch.export.export` and submit a PR to PyTorch.
+- Create an issue in the PyTorch GitHub repository against the *torch.export* component and attach the full error stack as well as reproduction scripts.
+
+## Exception summary
+
+<class 'torch._dynamo.exc.UncapturedHigherOrderOpError'>: This higher order operator doesn't work unless it is captured completely with torch.compile. Got graph break/error:
+
+ConstantVariable(str: 'too many values to unpack (expected 3)')
+  Higher Order Operator: torch.ops.higher_order.invoke_subgraph
+
+from user code:
+   File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/invoke_subgraph.py", line 397, in _invoke_subgraph_placeholder_wrapper
+    return invoke_subgraph_placeholder(func, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_export/non_strict_utils.py", line 1154, in __torch_function__
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree-tf5/QEfficient/transformers/models/gpt_oss/modeling_gpt_oss.py", line 1093, in forward
+    hidden_states, self_attn_weights, present_key_value = self.self_attn(
+                                                          ^^^^^^^^^^^^^^^
+  File "/home/amarshar/weightfree-tf5/QEfficient/transformers/models/gpt_oss/modeling_gpt_oss.py", line 1043, in forward
+    key_states, value_states, _ = past_key_value_update(
+
+Set TORCHDYNAMO_VERBOSE=1 for the internal stack trace (please do this especially if you're reporting a bug to PyTorch). For even more developer context, set TORCH_LOGS="+dynamo"
