@@ -495,3 +495,38 @@ RuntimeError: Export failed with use_dynamo=True and use_onnx_subfunctions=True 
 <class 'TypeError'>: forward() missing 1 required positional argument: 'arg26_1'
 
 (Refer to the full stack trace above for more information.)). Retry export with use_onnx_subfunctions=False for this model/runtime.
+python3 - <<'PY'
+import torch, inspect
+from torch._higher_order_ops import invoke_subgraph as M
+
+print("torch:", torch.__version__)
+print("file :", M.__file__)
+print("=" * 60)
+
+# --- Part 1: the placeholder wrapper (PR #182230 made it take kwargs) ---
+src_wrap = inspect.getsource(M._invoke_subgraph_placeholder_wrapper)
+print("WRAPPER SIGNATURE:")
+print(src_wrap.splitlines()[0])
+print("  -> has kwargs param:", "kwargs" in src_wrap.splitlines()[0])
+print("=" * 60)
+
+# --- Part 2: gen_schema (PR #182230 added the 'reuse functionalized GM' guard) ---
+# gen_schema lives on the HOP instance's class
+gen = type(M.invoke_subgraph).gen_schema if hasattr(M, "invoke_subgraph") else None
+if gen is None:
+    # fallback: find it on InvokeSubgraphHOP
+    from torch._higher_order_ops.invoke_subgraph import InvokeSubgraphHOP
+    gen = InvokeSubgraphHOP.gen_schema
+src_gs = inspect.getsource(gen)
+print("gen_schema:")
+print("  -> mentions FunctionalTensor :", "FunctionalTensor" in src_gs)
+print("  -> has all(isinstance ...) guard:", "all(" in src_gs and "isinstance" in src_gs)
+print("  -> still ALWAYS calls materialize_as_graph unconditionally:",
+      src_gs.count("materialize_as_graph") >= 1 and "FunctionalTensor" not in src_gs)
+print("=" * 60)
+print("VERDICT — PR #182230 invoke_subgraph fix present:",
+      ("kwargs" in src_wrap.splitlines()[0]) and ("FunctionalTensor" in src_gs))
+print("=" * 60)
+print("---- full gen_schema source for inspection ----")
+print(src_gs)
+PY
