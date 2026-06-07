@@ -536,7 +536,38 @@ with safe_open(sorted(glob.glob("gpt-oss-20b-dequant/*.safetensors"))[0], framew
         if "layers.0.mlp.experts" in k:
             print("L0:", k)
 PY
-python - <<'PY'
+model.layers.0.mlp.experts.down_proj_bias [32, 2880]
+model.layers.1.mlp.experts.down_proj_bias [32, 2880]
+model.layers.10.mlp.experts.down_proj_bias [32, 2880]
+model.layers.11.mlp.experts.down_proj_bias [32, 2880]
+model.layers.12.mlp.experts.down_proj_bias [32, 2880]
+model.layers.13.mlp.experts.down_proj_bias [32, 2880]
+model.layers.14.mlp.experts.down_proj_bias [32, 2880]
+model.layers.15.mlp.experts.down_proj_bias [32, 2880]
+model.layers.16.mlp.experts.down_proj_bias [32, 2880]
+model.layers.17.mlp.experts.down_proj_bias [32, 2880]
+model.layers.18.mlp.experts.down_proj_bias [32, 2880]
+model.layers.19.mlp.experts.down_proj_bias [32, 2880]
+model.layers.2.mlp.experts.down_proj_bias [32, 2880]
+model.layers.20.mlp.experts.down_proj_bias [32, 2880]
+model.layers.21.mlp.experts.down_proj_bias [32, 2880]
+model.layers.22.mlp.experts.down_proj_bias [32, 2880]
+model.layers.23.mlp.experts.down_proj_bias [32, 2880]
+model.layers.3.mlp.experts.down_proj_bias [32, 2880]
+model.layers.4.mlp.experts.down_proj_bias [32, 2880]
+model.layers.5.mlp.experts.down_proj_bias [32, 2880]
+model.layers.6.mlp.experts.down_proj_bias [32, 2880]
+model.layers.7.mlp.experts.down_proj_bias [32, 2880]
+model.layers.8.mlp.experts.down_proj_bias [32, 2880]
+model.layers.9.mlp.experts.down_proj_bias [32, 2880]
+---
+L0: model.layers.0.mlp.experts.down_proj_bias
+L0: model.layers.0.mlp.experts.gate_proj
+L0: model.layers.0.mlp.experts.gate_proj_bias
+L0: model.layers.0.mlp.experts.gate_up_proj_bias
+L0: model.layers.0.mlp.experts.up_proj
+L0: model.layers.0.mlp.experts.up_proj_bias
+(.venv) amarshar@gb-293-blr-04:~/weightfree-tf5$ python - <<'PY'
 import json, glob
 idx = glob.glob("gpt-oss-20b-dequant/*.index.json")
 if idx:
@@ -548,3 +579,4 @@ if idx:
 else:
     print("no index.json (single-shard model)")
 PY
+down_proj weight entries in index: 0
