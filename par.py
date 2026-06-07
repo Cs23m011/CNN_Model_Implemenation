@@ -484,3 +484,36 @@ for st in glob.glob("gpt-oss-20b-dequant/*.safetensors"):
             if "experts.down_proj" in k:
                 print(k, f.get_slice(k).get_shape())
 PY
+python - <<'PY'
+from safetensors import safe_open
+import glob
+for st in glob.glob("gpt-oss-20b-dequant/*.safetensors"):
+    with safe_open(st, framework="pt") as f:
+        for k in f.keys():
+            if "experts.down_proj" in k:
+                print(k, f.get_slice(k).get_shape())
+PY
+model.layers.10.mlp.experts.down_proj_bias [32, 2880]
+model.layers.7.mlp.experts.down_proj_bias [32, 2880]
+model.layers.8.mlp.experts.down_proj_bias [32, 2880]
+model.layers.9.mlp.experts.down_proj_bias [32, 2880]
+model.layers.11.mlp.experts.down_proj_bias [32, 2880]
+model.layers.12.mlp.experts.down_proj_bias [32, 2880]
+model.layers.13.mlp.experts.down_proj_bias [32, 2880]
+model.layers.14.mlp.experts.down_proj_bias [32, 2880]
+model.layers.15.mlp.experts.down_proj_bias [32, 2880]
+model.layers.3.mlp.experts.down_proj_bias [32, 2880]
+model.layers.4.mlp.experts.down_proj_bias [32, 2880]
+model.layers.5.mlp.experts.down_proj_bias [32, 2880]
+model.layers.6.mlp.experts.down_proj_bias [32, 2880]
+model.layers.20.mlp.experts.down_proj_bias [32, 2880]
+model.layers.21.mlp.experts.down_proj_bias [32, 2880]
+model.layers.22.mlp.experts.down_proj_bias [32, 2880]
+model.layers.23.mlp.experts.down_proj_bias [32, 2880]
+model.layers.0.mlp.experts.down_proj_bias [32, 2880]
+model.layers.1.mlp.experts.down_proj_bias [32, 2880]
+model.layers.2.mlp.experts.down_proj_bias [32, 2880]
+model.layers.16.mlp.experts.down_proj_bias [32, 2880]
+model.layers.17.mlp.experts.down_proj_bias [32, 2880]
+model.layers.18.mlp.experts.down_proj_bias [32, 2880]
+model.layers.19.mlp.experts.down_proj_bias [32, 2880]
