@@ -1,535 +1,315 @@
- python3 /home/amarshar/weightfree-tf5/examples/text_generation/compare.py
-`CLIPImageProcessor` requires torchvision (not installed); falling back to `CLIPImageProcessorPil` for backward compatibility. Install torchvision to use the default backend, or import `CLIPImageProcessorPil` directly to silence this warning.
-`SiglipImageProcessor` requires torchvision (not installed); falling back to `SiglipImageProcessorPil` for backward compatibility. Install torchvision to use the default backend, or import `SiglipImageProcessorPil` directly to silence this warning.
-`torch_dtype` is deprecated! Use `dtype` instead!
-GptOssConfig {
-  "architectures": [
-    "GptOssForCausalLM"
-  ],
-  "attention_bias": true,
-  "attention_dropout": 0.0,
-  "bos_token_id": null,
-  "dtype": "float32",
-  "eos_token_id": 200002,
-  "experts_per_token": 4,
-  "head_dim": 64,
-  "hidden_act": "silu",
-  "hidden_size": 2880,
-  "initial_context_length": 4096,
-  "initializer_range": 0.02,
-  "intermediate_size": 2880,
-  "layer_types": [
-    "sliding_attention",
-    "full_attention",
-    "sliding_attention",
-    "full_attention",
-    "sliding_attention",
-    "full_attention",
-    "sliding_attention",
-    "full_attention",
-    "sliding_attention",
-    "full_attention",
-    "sliding_attention",
-    "full_attention",
-    "sliding_attention",
-    "full_attention",
-    "sliding_attention",
-    "full_attention",
-    "sliding_attention",
-    "full_attention",
-    "sliding_attention",
-    "full_attention",
-    "sliding_attention",
-    "full_attention",
-    "sliding_attention",
-    "full_attention"
-  ],
-  "max_position_embeddings": 131072,
-  "max_seq_len_cached": null,
-  "model_type": "gpt_oss",
-  "num_attention_heads": 64,
-  "num_experts_per_tok": 4,
-  "num_hidden_layers": 2,
-  "num_key_value_heads": 8,
-  "num_local_experts": 32,
-  "output_router_logits": false,
-  "pad_token_id": 199999,
-  "rms_norm_eps": 1e-05,
-  "rope_parameters": {
-    "beta_fast": 32.0,
-    "beta_slow": 1.0,
-    "factor": 32.0,
-    "original_max_position_embeddings": 4096,
-    "rope_theta": 150000,
-    "rope_type": "yarn",
-    "truncate": false
-  },
-  "router_aux_loss_coef": 0.9,
-  "sliding_window": 128,
-  "swiglu_limit": 7.0,
-  "tie_word_embeddings": false,
-  "transformers_version": "5.5.4",
-  "use_cache": true,
-  "vocab_size": 201088
-}
+# ============================================================================
+# REPLACEMENT for QEffHybridCacheForGPTOSS in
+#   QEfficient/transformers/cache_utils.py
+#
+# WHY: invoke_subgraph (subfunction/weight-free export) cannot track KV tensors
+# that are stored as indexed Python-list elements and reassigned in place
+# (self.key_cache[layer_idx] = ...). It DOES track tensors stored as ATTRIBUTES
+# on a per-layer object that lives in a list of objects (like QEffDynamicLayer).
+# This is exactly why Llama (QEffDynamicCache) exports as a decoder-layer region
+# and gpt_oss (list-based) hits `arg26_1`.
+#
+# This rewrite keeps EVERY method's math identical, but stores K/V as
+# `layer.keys` / `layer.values` attributes on `_GptOssHybridLayer` objects held
+# in `self.layers`. All `self.key_cache[i]` accesses are replaced with property
+# shims so any external caller still works unchanged.
+# ============================================================================
 
-Exporting ...
-[Warning]: The subfunction feature is experimental. Please note that using compile consecutively with and without subfunction may produce inconsistent results.
-W0607 14:26:07.868000 221616 torch/onnx/_internal/exporter/_registration.py:107] torchvision is not installed. Skipping torchvision::nms
-W0607 14:26:07.869000 221616 torch/onnx/_internal/exporter/_registration.py:107] torchvision is not installed. Skipping torchvision::roi_align
-W0607 14:26:07.869000 221616 torch/onnx/_internal/exporter/_registration.py:107] torchvision is not installed. Skipping torchvision::roi_pool
-[torch.onnx] Obtain model graph for `QEffGptOssForCausalLM([...]` with `torch.export.export(..., strict=False)`...
-`use_return_dict` is deprecated! Use `return_dict` instead!
-[Warning]: While compiling, we found certain side effects happened in the model.forward. Here are the list of potential sources you can double check: ["L['kwargs']['past_key_value'].key_cache", "L['kwargs']['past_key_value'].value_cache"]
-[torch.onnx] Obtain model graph for `QEffGptOssForCausalLM([...]` with `torch.export.export(..., strict=False)`... ❌
-[torch.onnx] Obtain model graph for `QEffGptOssForCausalLM([...]` with `torch.export.export(..., strict=True)`...
-[torch.onnx] Obtain model graph for `QEffGptOssForCausalLM([...]` with `torch.export.export(..., strict=True)`... ❌
-ERROR - QEfficient.base.modeling_qeff - ONNX export or transforms failed: Failed to export the model with torch.export. This is step 1/3 of exporting the model to ONNX. Next steps:
-- Modify the model code for `torch.export.export` to succeed. Refer to https://pytorch.org/docs/stable/generated/exportdb/index.html for more information.
-- Debug `torch.export.export` and submit a PR to PyTorch.
-- Create an issue in the PyTorch GitHub repository against the *torch.export* component and attach the full error stack as well as reproduction scripts.
 
-## Exception summary
+class _GptOssHybridLayer:
+    """Per-layer KV holder. Tensors are ATTRIBUTES (stable across export region
+    boundary), not list elements."""
 
-<class 'TypeError'>: forward() missing 1 required positional argument: 'arg26_1'
+    def __init__(self):
+        self.keys: Optional[torch.Tensor] = None
+        self.values: Optional[torch.Tensor] = None
 
-(Refer to the full stack trace above for more information.)  (modeling_qeff.py:562)
-Traceback (most recent call last):
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/onnx/_internal/exporter/_capture_strategies.py", line 140, in __call__
-    exported_program = self._capture(model, args, kwargs, dynamic_shapes)
-                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/onnx/_internal/exporter/_capture_strategies.py", line 240, in _capture
-    return torch.export.export(
-           ^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/export/__init__.py", line 205, in export
-    raise e
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/export/__init__.py", line 171, in export
-    return _export(
-           ^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 1344, in wrapper
-    raise e
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 1310, in wrapper
-    ep = fn(*args, **kwargs)
-         ^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/export/exported_program.py", line 124, in wrapper
-    return fn(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_utils_internal.py", line 96, in wrapper_function
-    return function(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 2512, in _export
-    ep = _export_for_training(
-         ^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 1344, in wrapper
-    raise e
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 1310, in wrapper
-    ep = fn(*args, **kwargs)
-         ^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/export/exported_program.py", line 124, in wrapper
-    return fn(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 2300, in _export_for_training
-    export_artifact = export_func(
-                      ^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 2229, in _non_strict_export
-    aten_export_artifact = _to_aten_func(
-                           ^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 2006, in _export_to_aten_ir_make_fx
-    gm, graph_signature = transform(_make_fx_helper)(
-                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 2136, in _aot_export_non_strict
-    gm, sig = aot_export(stack, wrapped_mod, args, kwargs=kwargs, **flags)
-              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 1914, in _make_fx_helper
-    gm = make_fx(
-         ^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 3061, in wrapped
-    return make_fx_tracer.trace(f, *args)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 2963, in trace
-    return self._trace_inner(f, *args)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 2924, in _trace_inner
-    t = dispatch_trace(
-        ^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_compile.py", line 54, in inner
-    return disable_fn(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_dynamo/eval_frame.py", line 1445, in _fn
-    return fn(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 1691, in dispatch_trace
-    graph = tracer.trace(root, concrete_args)  # type: ignore[arg-type]
-            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 2498, in trace
-    res = super().trace(root, concrete_args)
-          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 914, in trace
-    (self.create_arg(fn(*args)),),
-                     ^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 1761, in wrapped
-    out = f(*tensors)  # type:ignore[call-arg]
-          ^^^^^^^^^^^
-  File "<string>", line 1, in <lambda>
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 1798, in wrapped_fn
-    return tuple(flat_fn(*args))
-                 ^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_functorch/_aot_autograd/utils.py", line 192, in flat_fn
-    tree_out = fn(*args, **kwargs)
-               ^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_functorch/_aot_autograd/graph_capture_wrappers.py", line 1536, in functional_call
-    out = mod(*args[params_len:], **kwargs)
-          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 888, in module_call_wrapper
-    return self.call_module(mod, forward, args, kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 2587, in call_module
-    return Tracer.call_module(self, m, forward, args, kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 577, in call_module
-    ret_val = forward(*args, **kwargs)
-              ^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 881, in forward
-    return _orig_module_call(mod, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
-    return self._call_impl(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
-    return forward_call(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/export/_trace.py", line 2120, in forward
-    tree_out = mod(*args, **kwargs)
-               ^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 888, in module_call_wrapper
-    return self.call_module(mod, forward, args, kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 2587, in call_module
-    return Tracer.call_module(self, m, forward, args, kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 577, in call_module
-    ret_val = forward(*args, **kwargs)
-              ^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 881, in forward
-    return _orig_module_call(mod, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
-    return self._call_impl(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
-    return forward_call(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/QEfficient/transformers/models/gpt_oss/modeling_gpt_oss.py", line 1395, in forward
-    outputs: MoeModelOutputWithPast = self.model(
-                                      ^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 888, in module_call_wrapper
-    return self.call_module(mod, forward, args, kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 2587, in call_module
-    return Tracer.call_module(self, m, forward, args, kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 577, in call_module
-    ret_val = forward(*args, **kwargs)
-              ^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 881, in forward
-    return _orig_module_call(mod, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
-    return self._call_impl(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
-    return forward_call(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/QEfficient/transformers/models/gpt_oss/modeling_gpt_oss.py", line 1297, in forward
-    layer_outputs = decoder_layer(
-                    ^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/transformers/modeling_layers.py", line 93, in __call__
-    return super().__call__(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 888, in module_call_wrapper
-    return self.call_module(mod, forward, args, kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 2587, in call_module
-    return Tracer.call_module(self, m, forward, args, kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 577, in call_module
-    ret_val = forward(*args, **kwargs)
-              ^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 881, in forward
-    return _orig_module_call(mod, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
-    return self._call_impl(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
-    return forward_call(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/invoke_subgraph.py", line 438, in inner
-    return invoke_subgraph_placeholder(inner_func, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/invoke_subgraph.py", line 401, in invoke_subgraph_placeholder
-    return _hop_compile_and_call(
-           ^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/utils.py", line 113, in _hop_compile_and_call
-    return torch.compile(fn, backend=backend, fullgraph=True)(
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_dynamo/eval_frame.py", line 1166, in compile_wrapper
-    result = fn(*args, **kwargs)
-             ^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/invoke_subgraph.py", line 396, in _invoke_subgraph_placeholder_wrapper
-    def _invoke_subgraph_placeholder_wrapper(func, args, kwargs):
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_dynamo/eval_frame.py", line 1445, in _fn
-    return fn(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_dynamo/backends/debugging.py", line 87, in wrapper
-    return gm.forward(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_lazy_graph_module.py", line 134, in _lazy_forward
-    return self(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/graph_module.py", line 1000, in call_wrapped
-    return self._wrapped_call(self, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/graph_module.py", line 507, in __call__
-    raise e
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/graph_module.py", line 493, in __call__
-    return super(self.cls, obj).__call__(*args, **kwargs)  # type: ignore[misc]
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 888, in module_call_wrapper
-    return self.call_module(mod, forward, args, kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 2584, in call_module
-    return forward(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 881, in forward
-    return _orig_module_call(mod, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
-    return self._call_impl(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
-    return forward_call(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "<eval_with_key>.15", line 32, in forward
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/invoke_subgraph.py", line 258, in __call__
-    return super().__call__(subgraph, identifier, *operands)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_ops.py", line 534, in __call__
-    return torch.overrides.handle_torch_function(
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/overrides.py", line 1779, in handle_torch_function
-    result = mode.__torch_function__(public_api, types, args, kwargs)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 1823, in __torch_function__
-    return func(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/invoke_subgraph.py", line 258, in __call__
-    return super().__call__(subgraph, identifier, *operands)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_ops.py", line 534, in __call__
-    return torch.overrides.handle_torch_function(
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/overrides.py", line 1779, in handle_torch_function
-    result = mode.__torch_function__(public_api, types, args, kwargs)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 1910, in __torch_function__
-    return func(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/invoke_subgraph.py", line 258, in __call__
-    return super().__call__(subgraph, identifier, *operands)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_ops.py", line 534, in __call__
-    return torch.overrides.handle_torch_function(
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/overrides.py", line 1779, in handle_torch_function
-    result = mode.__torch_function__(public_api, types, args, kwargs)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_export/non_strict_utils.py", line 1169, in __torch_function__
-    return func(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/invoke_subgraph.py", line 258, in __call__
-    return super().__call__(subgraph, identifier, *operands)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_ops.py", line 539, in __call__
-    return self.dispatch(dispatch_key_set.highestPriorityTypeId(), *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_ops.py", line 505, in dispatch
-    return handler(mode, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/invoke_subgraph.py", line 1263, in _
-    example_out = invoke_subgraph(graph, identifier, *operands)
-                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/invoke_subgraph.py", line 258, in __call__
-    return super().__call__(subgraph, identifier, *operands)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_ops.py", line 539, in __call__
-    return self.dispatch(dispatch_key_set.highestPriorityTypeId(), *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_ops.py", line 386, in dispatch
-    return kernel(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_ops.py", line 341, in maybe_run_autograd
-    schema = self.gen_schema(*args, **kwargs)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/invoke_subgraph.py", line 295, in gen_schema
-    gm = materialize_as_graph(
-         ^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/utils.py", line 1323, in materialize_as_graph
-    gm = _materialize_as_graph_inner()
-         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_dynamo/eval_frame.py", line 1445, in _fn
-    return fn(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/utils.py", line 1319, in _materialize_as_graph_inner
-    return _maybe_reenter_make_fx(
-           ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/utils.py", line 137, in wrapped
-    gm = _CURRENT_MAKE_FX_TRACER.trace_subgraph(
-         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 2987, in trace_subgraph
-    return sub_tracer._trace_inner(f, *args)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 2924, in _trace_inner
-    t = dispatch_trace(
-        ^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_compile.py", line 54, in inner
-    return disable_fn(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_dynamo/eval_frame.py", line 1445, in _fn
-    return fn(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 1691, in dispatch_trace
-    graph = tracer.trace(root, concrete_args)  # type: ignore[arg-type]
-            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 2498, in trace
-    res = super().trace(root, concrete_args)
-          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_dynamo/eval_frame.py", line 1445, in _fn
-    return fn(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 914, in trace
-    (self.create_arg(fn(*args)),),
-                     ^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 1761, in wrapped
-    out = f(*tensors)  # type:ignore[call-arg]
-          ^^^^^^^^^^^
-  File "<string>", line 1, in <lambda>
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/graph_module.py", line 1000, in call_wrapped
-    return self._wrapped_call(self, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/graph_module.py", line 507, in __call__
-    raise e
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/graph_module.py", line 493, in __call__
-    return super(self.cls, obj).__call__(*args, **kwargs)  # type: ignore[misc]
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 888, in module_call_wrapper
-    return self.call_module(mod, forward, args, kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 2584, in call_module
-    return forward(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 881, in forward
-    return _orig_module_call(mod, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
-    return self._call_impl(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
-    return forward_call(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-TypeError: forward() missing 1 required positional argument: 'arg26_1'
 
-The above exception was the direct cause of the following exception:
+class QEffHybridCacheForGPTOSS:
+    def __init__(self, config, batch_size, max_cache_len, sliding_window_len):
+        self.max_cache_len = max_cache_len
+        self.batch_size = batch_size
+        self.sliding_window_len = sliding_window_len
+        self.layers: List[_GptOssHybridLayer] = []
 
-Traceback (most recent call last):
-  File "/home/amarshar/weightfree-tf5/QEfficient/utils/export_utils.py", line 209, in wrapper
-    onnx_path = func(self, *args, **kwargs)
-                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/QEfficient/base/modeling_qeff.py", line 563, in _export
-    raise e
-  File "/home/amarshar/weightfree-tf5/QEfficient/base/modeling_qeff.py", line 461, in _export
-    ) = export_weight_free_onnx(
-        ^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/QEfficient/exporter/weight_free.py", line 273, in export_weight_free_onnx
-    onnx_program = torch.onnx.export(
-                   ^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/onnx/__init__.py", line 291, in export
-    return _compat.export_compat(
-           ^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/onnx/_internal/exporter/_compat.py", line 161, in export_compat
-    onnx_program = _core.export(
-                   ^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/onnx/_internal/exporter/_flags.py", line 27, in wrapper
-    return func(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/onnx/_internal/exporter/_core.py", line 1473, in export
-    raise _errors.TorchExportError(
-torch.onnx._internal.exporter._errors.TorchExportError: Failed to export the model with torch.export. This is step 1/3 of exporting the model to ONNX. Next steps:
-- Modify the model code for `torch.export.export` to succeed. Refer to https://pytorch.org/docs/stable/generated/exportdb/index.html for more information.
-- Debug `torch.export.export` and submit a PR to PyTorch.
-- Create an issue in the PyTorch GitHub repository against the *torch.export* component and attach the full error stack as well as reproduction scripts.
+    # ---- compatibility shims so existing `self.key_cache[i]` / len() callers work ----
+    def _ensure_layer(self, layer_idx: int) -> None:
+        while len(self.layers) <= layer_idx:
+            self.layers.append(_GptOssHybridLayer())
 
-## Exception summary
+    @property
+    def key_cache(self):
+        # read-only list-like view; supports len() and indexing for callers/tests
+        return [layer.keys for layer in self.layers]
 
-<class 'TypeError'>: forward() missing 1 required positional argument: 'arg26_1'
+    @property
+    def value_cache(self):
+        return [layer.values for layer in self.layers]
 
-(Refer to the full stack trace above for more information.)
+    @classmethod
+    def from_legacy_cache(
+        cls, config, past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
+    ) -> "QEffHybridCacheForGPTOSS":
+        cache = cls(
+            config,
+            batch_size=past_key_values[0][0].shape[0],
+            max_cache_len=past_key_values[1][0].shape[2],
+            sliding_window_len=past_key_values[0][0].shape[2],
+        )
+        if past_key_values is not None:
+            for layer_idx in range(len(past_key_values)):
+                key_states, value_states = past_key_values[layer_idx]
+                cache.update(key_states, value_states, layer_idx)
+        return cache
 
-The above exception was the direct cause of the following exception:
+    def __len__(self):
+        return len(self.layers)
 
-Traceback (most recent call last):
-  File "/home/amarshar/weightfree-tf5/examples/text_generation/compare.py", line 208, in <module>
-    qeff_model.export(
-  File "/home/amarshar/weightfree-tf5/QEfficient/transformers/models/modeling_auto.py", line 3572, in export
-    return self._export(
-           ^^^^^^^^^^^^^
-  File "/home/amarshar/weightfree-tf5/QEfficient/utils/export_utils.py", line 212, in wrapper
-    raise RuntimeError(
-RuntimeError: Export failed with use_dynamo=True and use_onnx_subfunctions=True while nested compile regions were enabled for repeated-subgraph extraction (TorchExportError: Failed to export the model with torch.export. This is step 1/3 of exporting the model to ONNX. Next steps:
-- Modify the model code for `torch.export.export` to succeed. Refer to https://pytorch.org/docs/stable/generated/exportdb/index.html for more information.
-- Debug `torch.export.export` and submit a PR to PyTorch.
-- Create an issue in the PyTorch GitHub repository against the *torch.export* component and attach the full error stack as well as reproduction scripts.
+    def get_seq_length(self, layer_idx: Optional[int] = 0, cache_position: Optional[torch.LongTensor] = None) -> int:
+        is_empty_layer = (
+            len(self.layers) == 0
+            or len(self.layers) <= layer_idx
+            or self.layers[layer_idx].keys is None
+            or len(self.layers[layer_idx].keys) == 0
+        )
+        layer_seq_length = self.layers[layer_idx].keys.shape[-2] if not is_empty_layer else 0
+        return layer_seq_length
 
-## Exception summary
+    def to_legacy_cache(self) -> Tuple[Tuple[torch.Tensor], Tuple[torch.Tensor]]:
+        legacy_cache = ()
+        for layer_idx in range(len(self)):
+            legacy_cache += ((self.layers[layer_idx].keys, self.layers[layer_idx].values),)
+        return legacy_cache
 
-<class 'TypeError'>: forward() missing 1 required positional argument: 'arg26_1'
+    def write_only(
+        self,
+        key_states: torch.Tensor,
+        value_states: torch.Tensor,
+        layer_idx: int,
+        cache_kwargs: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        if len(self.layers) <= layer_idx:
+            self._ensure_layer(layer_idx)
+            self.layers[layer_idx].keys = key_states
+            self.layers[layer_idx].values = value_states
+            k_out, v_out = key_states, value_states
+        else:
+            layer = self.layers[layer_idx]
+            position_ids = cache_kwargs.get("position_ids")
+            is_sliding_layer = cache_kwargs.get("is_sliding")
+            _, _, ctx_len, _ = layer.keys.shape
+            batch_index = cache_kwargs.get("batch_index", None)
 
-(Refer to the full stack trace above for more information.)). Retry export with use_onnx_subfunctions=False for this model/runtime.
-import torch, inspect
-  from torch._higher_order_ops.invoke_subgraph import invoke_subgraph, invoke_subgraph_placeholder, InvokeSubgraphHOP
+            if is_sliding_layer:
+                kv_position_ids = torch.arange(ctx_len, dtype=torch.int64, device=position_ids.device).reshape(1, -1)
+            else:
+                kv_position_ids = position_ids
 
-  print("torch:", torch.__version__)
-  print("file :", inspect.getfile(InvokeSubgraphHOP))
-  print("=" * 60)
+            if batch_index is not None:
+                invalid_scatter_index = torch.iinfo(torch.int32).max
+                scatter_position_ids = torch.where(position_ids < 0, invalid_scatter_index, position_ids)
+                layer.keys = CtxScatterFuncCB.apply(layer.keys, batch_index, scatter_position_ids, key_states)
+                layer.values = CtxScatterFuncCB.apply(layer.values, batch_index, scatter_position_ids, value_states)
+            else:
+                layer.keys = CtxScatterFunc.apply(layer.keys, kv_position_ids, key_states)
+                layer.values = CtxScatterFunc.apply(layer.values, kv_position_ids, value_states)
+            k_out, v_out = layer.keys, layer.values
+        return k_out, v_out
 
-  # --- Part 1: the placeholder wrapper ---
-  src_wrap = inspect.getsource(invoke_subgraph_placeholder)
-  print("WRAPPER SIGNATURE:")
-  print(src_wrap.splitlines()[0])
-  print("  -> has kwargs param:", "kwargs" in src_wrap.splitlines()[0])
-  print("=" * 60)
+    def read_only_blockedKV(
+        self,
+        start_idx: torch.Tensor,
+        end_idx: torch.Tensor,
+        layer_idx: int,
+        cache_kwargs: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        position_ids = cache_kwargs.get("position_ids")
+        batch_index = cache_kwargs.get("batch_index", None)
 
-  # --- Part 2: gen_schema ---
-  src_gs = inspect.getsource(InvokeSubgraphHOP.gen_schema)
-  print("gen_schema:")
-  print("  -> mentions FunctionalTensor :", "FunctionalTensor" in src_gs)
-  print("  -> has all(isinstance ...) guard:", "all(" in src_gs and "isinstance" in src_gs)
-  print("  -> always calls materialize_as_graph unconditionally:",
-        src_gs.count("materialize_as_graph") >= 1 and "FunctionalTensor" not in src_gs)
-  print("=" * 60)
-  print("VERDICT — PR #182230 invoke_subgraph fix present:",
-        ("kwargs" in src_wrap.splitlines()[0]) and ("FunctionalTensor" in src_gs))
-  print("=" * 60)
-  print("---- full gen_schema source for inspection ----")
-  print(src_gs)
-  torch: 2.13.0.dev20260603+cpu───────────────────────────────────────────────────────────────────────────────────────────────────────────
-❯    file : /home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/invoke_subgraph.py
- ─   ============================================================────────────────────────────────────────────────────────────────────────────
-  esc… +28 lines (ctrl+o to expand)                                                                                        ● high · /effort
+        layer = self.layers[layer_idx]
+        k_out, v_out = layer.keys, layer.values
+        batch, num_kv_heads, _, _ = k_out.shape
 
-● VERDICT: PR #182230 fix is present in your torch 2.13.0.dev20260603+cpu.
+        ctx_indices = torch.arange(start=start_idx, end=end_idx, device=position_ids.device)[None, None, ...]
+        gather_limit = position_ids.max(1, keepdim=True).values.unsqueeze(1)
+        invalid_mask = ctx_indices > gather_limit
+        if torch.onnx.is_in_onnx_export():
+            invalid_idx_value = torch.iinfo(torch.int32).max
+        else:
+            invalid_idx_value = 0
+        ctx_indices = torch.where(invalid_mask, invalid_idx_value, ctx_indices)
 
-  Both checks pass:
-  - invoke_subgraph_placeholder has **kwargs in its signature ✓
-  - gen_schema has the FunctionalTensor guard — it reuses an already-functionalized GraphModule instead of unconditionally calling
-  materialize_as_graph, which would break when buffers are FunctionalTensor instances ✓
+        if batch_index is not None:
+            k_out = CtxGatherFuncBlockedKVCB.apply(k_out, batch_index, ctx_indices)
+            v_out = CtxGatherFuncBlockedKVCB.apply(v_out, batch_index, ctx_indices)
+        else:
+            ctx_indices = ctx_indices.expand(batch, num_kv_heads, ctx_indices.shape[-1])
+            k_out = CtxGatherFuncBlockedKV.apply(k_out, ctx_indices)
+            v_out = CtxGatherFuncBlockedKV.apply(v_out, ctx_indices)
+
+        v_out = torch.where(invalid_mask.unsqueeze(-1), torch.zeros_like(v_out), v_out)
+        return k_out, v_out
+
+    def update(
+        self,
+        key_states: torch.Tensor,
+        value_states: torch.Tensor,
+        layer_idx: int,
+        cache_kwargs: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        if len(self.layers) <= layer_idx:
+            self._ensure_layer(layer_idx)
+            self.layers[layer_idx].keys = key_states
+            self.layers[layer_idx].values = value_states
+            k_out, v_out = key_states, value_states
+        else:
+            layer = self.layers[layer_idx]
+            position_ids = cache_kwargs.get("position_ids")
+            is_sliding_layer = cache_kwargs.get("is_sliding")
+            sliding_window = cache_kwargs.get("sliding_window")
+            batch_index = cache_kwargs.get("batch_index", None)
+
+            if is_sliding_layer:
+                kv_position_ids = torch.where(
+                    position_ids == -1,
+                    position_ids,
+                    _remainder_with_symbolic_divisor(position_ids, sliding_window),
+                )
+            else:
+                kv_position_ids = position_ids
+
+            if batch_index is not None:
+                if torch.onnx.is_in_onnx_export():
+                    invalid_scatter_index = torch.iinfo(torch.int32).max
+                    scatter_position_ids = torch.where(kv_position_ids < 0, invalid_scatter_index, kv_position_ids)
+                else:
+                    scatter_position_ids = kv_position_ids
+
+                ctx_scatter_cb_interface = select_interface(
+                    CtxScatterFuncCB.apply,
+                    torch.ops.qefficient.ctx_scatter_cb,
+                )
+                layer.keys = ctx_scatter_cb_interface(layer.keys, batch_index, scatter_position_ids, key_states)
+                layer.values = ctx_scatter_cb_interface(layer.values, batch_index, scatter_position_ids, value_states)
+            else:
+                ctx_scatter_interface = select_interface(
+                    CtxScatterFunc.apply,
+                    torch.ops.qefficient.ctx_scatter,
+                )
+                layer.keys = ctx_scatter_interface(layer.keys, kv_position_ids, key_states)
+                layer.values = ctx_scatter_interface(layer.values, kv_position_ids, value_states)
+
+            k_out, v_out = layer.keys, layer.values
+
+            # Original Gather
+            if is_sliding_layer:
+                ctx_len = layer.keys.shape[2]
+            else:
+                ctx_len = cache_kwargs.get("CCL", layer.keys.shape[2])
+
+            ctx_indices = torch.arange(ctx_len, device=position_ids.device)[None, None, ...]
+            gather_limit = position_ids.max(1, keepdim=True).values.unsqueeze(1)
+            invalid_mask = ctx_indices > gather_limit
+            if torch.onnx.is_in_onnx_export():
+                invalid_idx_value = torch.iinfo(torch.int32).max
+            else:
+                invalid_idx_value = 0
+            ctx_indices = torch.where(invalid_mask, invalid_idx_value, ctx_indices)
+
+            if batch_index is not None:
+                ctx_gather_cb_interface = select_interface(
+                    CtxGatherFuncCB.apply,
+                    torch.ops.qefficient.ctx_gather_cb,
+                )
+                k_out = ctx_gather_cb_interface(k_out, batch_index, ctx_indices, ctx_len)
+                v_out = ctx_gather_cb_interface(v_out, batch_index, ctx_indices, ctx_len)
+            else:
+                ctx_gather_interface = select_interface(
+                    CtxGatherFunc.apply,
+                    torch.ops.qefficient.ctx_gather,
+                )
+                k_out = ctx_gather_interface(k_out, ctx_indices, ctx_len)
+                v_out = ctx_gather_interface(v_out, ctx_indices, ctx_len)
+
+            v_out = torch.where(invalid_mask.unsqueeze(-1), torch.zeros_like(v_out), v_out)
+        return k_out, v_out
+
+    def full_cache_update_chunked(
+        self,
+        key_states: torch.Tensor,
+        value_states: torch.Tensor,
+        layer_idx: int,
+        cache_kwargs: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        layer = self.layers[layer_idx]
+        position_ids = cache_kwargs.get("position_ids")
+        batch_index = cache_kwargs.get("batch_index")
+        invalid_idx_value = InvalidIndexProvider._get_invalid_idx_value()
+
+        if batch_index is not None:
+            if torch.onnx.is_in_onnx_export():
+                scatter_position_ids = torch.where(position_ids < 0, torch.iinfo(torch.int32).max, position_ids)
+            layer.keys = CtxScatterFuncCB.apply(layer.keys, batch_index, scatter_position_ids, key_states)
+            layer.values = CtxScatterFuncCB.apply(layer.values, batch_index, scatter_position_ids, value_states)
+        else:
+            layer.keys = CtxScatterFunc.apply(layer.keys, position_ids, key_states)
+            layer.values = CtxScatterFunc.apply(layer.values, position_ids, value_states)
+
+        k_out, v_out = layer.keys, layer.values
+
+        ctx_len = cache_kwargs.get("CCL", k_out.shape[2])
+        ctx_indices = torch.arange(ctx_len, device=position_ids.device)[None, None, ...]
+        gather_limit = position_ids.max(1, keepdim=True).values.unsqueeze(1)
+        invalid_mask = ctx_indices > gather_limit
+        ctx_indices = torch.where(invalid_mask, invalid_idx_value, ctx_indices)
+        if batch_index is not None:
+            k_out = CtxGatherFuncCB.apply(k_out, batch_index, ctx_indices, ctx_len)
+            v_out = CtxGatherFuncCB.apply(v_out, batch_index, ctx_indices, ctx_len)
+        else:
+            k_out = CtxGatherFunc.apply(k_out, ctx_indices, ctx_len)
+            v_out = CtxGatherFunc.apply(v_out, ctx_indices, ctx_len)
+        v_out = torch.where(invalid_mask.unsqueeze(-1), torch.zeros_like(v_out), v_out)
+
+        return k_out, v_out
+
+    def sliding_window_update_chunked(
+        self,
+        key_states: torch.Tensor,
+        value_states: torch.Tensor,
+        layer_idx: int,
+        cache_kwargs: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        layer = self.layers[layer_idx]
+        position_ids = cache_kwargs.get("position_ids")
+        batch_index = cache_kwargs.get("batch_index")
+        invalid_idx_value = InvalidIndexProvider._get_invalid_idx_value()
+
+        if batch_index is not None:
+            if torch.onnx.is_in_onnx_export():
+                scatter_position_ids = torch.where(position_ids < 0, torch.iinfo(torch.int32).max, position_ids)
+            layer.keys = CtxScatterFuncCB.apply(layer.keys, batch_index, scatter_position_ids, key_states)
+            layer.values = CtxScatterFuncCB.apply(layer.values, batch_index, scatter_position_ids, value_states)
+        else:
+            layer.keys = CtxScatterFunc.apply(layer.keys, position_ids, key_states)
+            layer.values = CtxScatterFunc.apply(layer.values, position_ids, value_states)
+
+        k_out, v_out = layer.keys, layer.values
+        sliding_window_len = cache_kwargs.get("sliding_window")
+
+        ctx_len = position_ids.shape[1] + sliding_window_len
+        ctx_indices = torch.arange(ctx_len, device=position_ids.device)[None, None, ...]
+        first_pos_idx = position_ids[0][0]
+        add_idx = torch.where(first_pos_idx >= sliding_window_len, first_pos_idx - sliding_window_len, 0)
+        ctx_indices += add_idx
+        gather_limit = position_ids.max(1, keepdim=True).values.unsqueeze(1)
+        invalid_mask = ctx_indices > gather_limit
+        ctx_indices = torch.where(invalid_mask, invalid_idx_value, ctx_indices)
+        if batch_index is not None:
+            k_out = CtxGatherFuncCB.apply(k_out, batch_index, ctx_indices, ctx_len)
+            v_out = CtxGatherFuncCB.apply(v_out, batch_index, ctx_indices, ctx_len)
+        else:
+            k_out = CtxGatherFunc.apply(k_out, ctx_indices, ctx_len)
+            v_out = CtxGatherFunc.apply(v_out, ctx_indices, ctx_len)
+        v_out = torch.where(invalid_mask.unsqueeze(-1), torch.zeros_like(v_out), v_out)
+
+        return k_out, v_out
