@@ -517,3 +517,34 @@ model.layers.16.mlp.experts.down_proj_bias [32, 2880]
 model.layers.17.mlp.experts.down_proj_bias [32, 2880]
 model.layers.18.mlp.experts.down_proj_bias [32, 2880]
 model.layers.19.mlp.experts.down_proj_bias [32, 2880]
+python - <<'PY'
+from safetensors import safe_open
+import glob, json
+# 1) Does down_proj (weight) exist ANYWHERE, under any name?
+hits = {}
+for st in sorted(glob.glob("gpt-oss-20b-dequant/*.safetensors")):
+    with safe_open(st, framework="pt") as f:
+        for k in f.keys():
+            if "down_proj" in k:           # broader: catch any naming
+                hits[k] = f.get_slice(k).get_shape()
+for k in sorted(hits):
+    print(k, hits[k])
+print("---")
+# 2) Is there a fused/packed form still present for layer 0?
+with safe_open(sorted(glob.glob("gpt-oss-20b-dequant/*.safetensors"))[0], framework="pt") as f:
+    for k in f.keys():
+        if "layers.0.mlp.experts" in k:
+            print("L0:", k)
+PY
+python - <<'PY'
+import json, glob
+idx = glob.glob("gpt-oss-20b-dequant/*.index.json")
+if idx:
+    m = json.load(open(idx[0]))["weight_map"]
+    dp = {k: v for k, v in m.items() if "experts.down_proj" in k and "bias" not in k}
+    print("down_proj weight entries in index:", len(dp))
+    for k in list(dp)[:3]:
+        print(" ", k, "->", dp[k])
+else:
+    print("no index.json (single-shard model)")
+PY
