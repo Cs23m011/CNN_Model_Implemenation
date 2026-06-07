@@ -15,7 +15,7 @@
 # shims so any external caller still works unchanged.
 # ============================================================================
 
-
+TORCHDYNAMO_VERBOSE=1 TORCH_LOGS="+dynamo,+export" python3 examples/text_generation/compare.py 2>&1 | tee arg26.log
 class _GptOssHybridLayer:
     """Per-layer KV holder. Tensors are ATTRIBUTES (stable across export region
     boundary), not list elements."""
