@@ -1,472 +1,155 @@
 # -----------------------------------------------------------------------------
+# One-time offline dequantization of a gpt_oss (MXFP4) checkpoint into a plain
+# float checkpoint, so that weight_free_export_from_config.py can treat it
+# EXACTLY like a dense Llama model.
 #
-# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-# SPDX-License-Identifier: BSD-3-Clause
+# NOTE on the save path:
+#   We do NOT use model.save_pretrained(). On the QEff-wrapped gpt_oss experts
+#   module, save_pretrained's parameter collection DROPS the `down_proj` weight
+#   (keeps down_proj_bias but loses the weight). We instead save the raw
+#   model.state_dict() and ASSERT every required expert weight is present, so an
+#   incomplete checkpoint can never ship silently.
 #
+# Run this ONCE per model. It is the only RAM-heavy step.
 # -----------------------------------------------------------------------------
 
-from typing import List, Optional, Tuple, Type
+import argparse
+import json
+from pathlib import Path
 
 import torch
-import torch.nn.functional as F
-from torch import nn
-from transformers.modeling_outputs import (
-    MoeCausalLMOutputWithPast,
-    MoeModelOutputWithPast,
-)
-from transformers.models.qwen3_moe.modeling_qwen3_moe import (
-    Qwen3MoeAttention,
-    Qwen3MoeConfig,
-    Qwen3MoeDecoderLayer,
-    Qwen3MoeForCausalLM,
-    Qwen3MoeModel,
-    Qwen3MoeRotaryEmbedding,
-    Qwen3MoeSparseMoeBlock,
-    repeat_kv,
-    rotate_half,
-)
+from safetensors.torch import save_file
 
-from QEfficient.blocking.attention_blocking import (
-    AttentionBlockingConfig,
-    BlockingMode,
-    generic_blocked_attention_interface,
-    past_key_value_update,
-)
-from QEfficient.transformers.cache_utils import QEffDynamicCache
-from QEfficient.transformers.modeling_attn_mask_utils import _create_causal_mask
-from QEfficient.utils.constants import MIN_MASKED_ATTENTION_VALUE
-
-
-class QEffQwen3MoeRotaryEmbedding(Qwen3MoeRotaryEmbedding):
-    def __init__(self, config: Qwen3MoeConfig, device=None):
-        super().__init__(config=config)
-
-        # Build here to make `torch.jit.trace` work.
-        self._set_cos_sin_cache(
-            seq_len=self.original_max_seq_len, device=self.inv_freq.device, dtype=torch.get_default_dtype()
-        )
-
-    def _set_cos_sin_cache(self, seq_len, device, dtype):
-        self.max_seq_len_cached = seq_len
-        t = torch.arange(self.max_seq_len_cached, device=device, dtype=torch.int64).type_as(self.inv_freq)
-
-        freqs = torch.outer(t, self.inv_freq)
-
-        emb = torch.cat((freqs, freqs), dim=-1)
-        self.register_buffer("cos_cached", emb.cos().to(dtype), persistent=False)
-        self.register_buffer("sin_cached", emb.sin().to(dtype), persistent=False)
-
-
-def qeff_apply_rotary_pos_emb(q, k, cos, sin):
-    """Applies Rotary Position Embedding to the query and key tensors.
-
-    Args:
-        q (`torch.Tensor`): The query tensor.
-        k (`torch.Tensor`): The key tensor.
-        cos (`torch.Tensor`): The cosine part of the rotary embedding.
-        sin (`torch.Tensor`): The sine part of the rotary embedding.
-    Returns:
-        `tuple(torch.Tensor)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
-    """
-
-    # Apply rotation
-    cos = cos.to(device=q.device)
-    sin = sin.to(device=q.device)
-    q_embed = (q * cos) + (rotate_half(q) * sin)
-    k_embed = (k * cos) + (rotate_half(k) * sin)
-    # Cast back to original dtype
-    return q_embed.to(q.dtype), k_embed.to(k.dtype)
-
-
-def eager_attention_forward(
-    module: nn.Module,
-    query: torch.Tensor,
-    key: torch.Tensor,
-    value: torch.Tensor,
-    attention_mask: Optional[torch.Tensor],
-    scaling: float,
-):
-    key_states = repeat_kv(key, module.num_key_value_groups)
-
-    value_states = repeat_kv(value, module.num_key_value_groups)
-    attn_weights = torch.matmul(query, key_states.transpose(2, 3)) * scaling
-    if attention_mask is not None:
-        masked_fill = torch.full_like(attn_weights, MIN_MASKED_ATTENTION_VALUE, dtype=torch.float32)
-        attn_weights = torch.where(attention_mask, masked_fill, attn_weights)
-
-    attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query.dtype)
-    attn_output = torch.matmul(attn_weights, value_states)
-    attn_output = attn_output.transpose(1, 2).contiguous()
-
-    return attn_output, attn_weights
-
-
-class QEffPrefillChunkedQwen3MoeSparseMoeBlock(Qwen3MoeSparseMoeBlock):
-    def forward(self, hidden_states: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        B, S, H = hidden_states.shape
-        T = B * S
-        x = hidden_states.view(T, H)
-        router_logits = self.gate(x)  # [T, E]
-        prob = F.softmax(router_logits, -1, dtype=torch.float)
-        top_w, top_i = torch.topk(prob, self.top_k, -1)
-        if self.norm_topk_prob:  # only diff with mixtral sparse moe block!
-            top_w /= top_w.sum(-1, keepdim=True)
-        top_w = top_w.to(hidden_states.dtype)
-        masked_logits = torch.zeros_like(router_logits)
-        masked_logits.scatter_(1, top_i, top_w)
-        # Routing weights for each expert [T, E]
-        routing_weights = masked_logits
-        # ────────────────── allocate the output tensor ─────
-        expert_out = x.new_zeros((T, H))  # accumulation buffer
-        # ───────────────────────── Expert computation loop ─────────────────────────────
-        for e in range(self.num_experts):
-            routing_weight = routing_weights[:, e].unsqueeze(-1)  # [T, 1]
-            W_g, W_u = self.experts[e].gate_proj.weight.T, self.experts[e].up_proj.weight.T  # [H, I], [H, I]
-            W_d = self.experts[e].down_proj.weight.T  # [I, H]
-            gate = x @ W_g  # [T, I]
-            up = x @ W_u  # [T, I]
-            down = (up * self.experts[e].act_fn(gate)) @ W_d  # [T, H]
-            masked_down = down * routing_weight
-            expert_out += masked_down
-        return expert_out.view(B, S, H), router_logits
-
-
-class QEffQwen3MoeSparseMoeBlock(Qwen3MoeSparseMoeBlock):
-    def __qeff_init__(self):
-        # Skip pre-stacking for meta models (weight-free export).
-        # Meta tensors have no data so the stacked tensor cannot be saved as an
-        # ONNX initializer.  forward() stacks inline from individual expert weights
-        # instead — those ARE in the checkpoint and get promoted to ONNX inputs
-        # by _promote_initializers_and_build_spec.  The individual weights are
-        # smaller so the compiler can dynamically map them without hitting the
-        # VA space limit that a single large pre-stacked tensor would cause.
-        if next(self.parameters()).is_meta:
-            return
-        with torch.no_grad():
-            self.gate_proj_w = torch.stack([self.experts[e].gate_proj.weight.T for e in range(self.num_experts)])
-            self.up_proj_w   = torch.stack([self.experts[e].up_proj.weight.T   for e in range(self.num_experts)])
-            self.down_proj_w = torch.stack([self.experts[e].down_proj.weight.T for e in range(self.num_experts)])
-
-    def forward(self, hidden_states: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        B, S, H = hidden_states.shape
-        T = B * S
-        hidden_states = hidden_states.view(T, H)
-        router_logits = self.gate(hidden_states)  # [T, E]
-        prob = F.softmax(router_logits, -1, dtype=torch.float)
-        top_w, top_i = torch.topk(prob, self.top_k, -1)
-        if self.norm_topk_prob:  # only diff with mixtral sparse moe block!
-            top_w = top_w / torch.einsum("bi->b", top_w)[:, None]
-        top_w = top_w.to(hidden_states.dtype)
-        
-        # Real-model path: use pre-stacked buffers from __qeff_init__ (fast).
-        # Weight-free path: gate_proj_w was not created (meta guard above), so
-        # stack inline — each experts[e].weight is an individual ONNX input that
-        # the compiler can dynamically map without static VA space pressure.
-        if hasattr(self, "gate_proj_w"):
-            gate_proj_w = self.gate_proj_w[top_i.flatten()]
-            up_proj_w   = self.up_proj_w[top_i.flatten()]
-            down_proj_w = self.down_proj_w[top_i.flatten()]
-        else:
-            all_gate = torch.stack([e.gate_proj.weight.T for e in self.experts])
-            all_up   = torch.stack([e.up_proj.weight.T   for e in self.experts])
-            all_down = torch.stack([e.down_proj.weight.T for e in self.experts])
-            gate_proj_w = all_gate[top_i.flatten()]
-            up_proj_w   = all_up[top_i.flatten()]
-            down_proj_w = all_down[top_i.flatten()]
-
-        expert_in = hidden_states.unsqueeze(1).expand(-1, self.top_k, -1).contiguous().view(-1, 1, H)
-        gate = torch.bmm(expert_in, gate_proj_w)
-        up = torch.bmm(expert_in, up_proj_w)
-        intermediate = up * self.experts[0].act_fn(gate)
-        experts_out = torch.bmm(intermediate, down_proj_w)
-        experts_out = experts_out.view(B * S, self.top_k, H)
-        experts_out = experts_out * top_w.unsqueeze(-1)
-        experts_out = torch.einsum("bnd->bd", experts_out)
-        return experts_out.view(B, S, H), router_logits
-
-
-class QEffQwen3MoeAttention(Qwen3MoeAttention):
-    def forward(
-        self,
-        hidden_states: torch.Tensor,
-        attention_mask: Optional[torch.Tensor],
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[Tuple[torch.Tensor]] = None,
-        comp_ctx_lengths: Optional[torch.LongTensor] = None,
-        batch_index: Optional[torch.LongTensor] = None,
-        cache_position: Optional[torch.LongTensor] = None,
-        cos_cached: Optional[torch.Tensor] = None,
-        sin_cached: Optional[torch.Tensor] = None,
-        **kwargs,
-    ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
-        input_shape = hidden_states.shape[:-1]
-        hidden_shape = (*input_shape, -1, self.head_dim)
-
-        query_states = self.q_norm(self.q_proj(hidden_states).view(hidden_shape)).transpose(1, 2)
-        key_states = self.k_norm(self.k_proj(hidden_states).view(hidden_shape)).transpose(1, 2)
-        value_states = self.v_proj(hidden_states).view(hidden_shape).transpose(1, 2)
-
-        # kv_seq_len = past_key_value.get_seq_length(self.layer_idx, cache_position)
-        query_states, key_states = qeff_apply_rotary_pos_emb(query_states, key_states, cos_cached, sin_cached)
-
-        past_seen_tokens = past_key_values.get_seq_length(self.layer_idx) if past_key_values is not None else 0
-        blocking_config = getattr(self, "attn_blocking_config", AttentionBlockingConfig())
-        use_blocking = blocking_config is not None and (blocking_config.mode != BlockingMode.NONE)
-        if use_blocking:
-            attn_output, attn_weights = generic_blocked_attention_interface(
-                module=self,
-                query=query_states,
-                key=key_states,
-                value=value_states,
-                attention_mask=attention_mask,
-                scaling=self.scaling,
-                layer_idx=self.layer_idx,
-                past_key_value=past_key_values,
-                blocking_config=blocking_config,
-                comp_ctx_length=comp_ctx_lengths,
-                batch_index=batch_index,
-                position_ids=position_ids,
-                past_seen_tokens=past_seen_tokens,
-            )
-        else:
-            key_states, value_states, _ = past_key_value_update(
-                module=self,
-                key=key_states,
-                value=value_states,
-                attention_mask=attention_mask,
-                past_key_value=past_key_values,
-                comp_ctx_lengths=comp_ctx_lengths,
-                batch_index=batch_index,
-                position_ids=position_ids,
-            )
-            attn_output, attn_weights = eager_attention_forward(
-                self,
-                query_states,
-                key_states,
-                value_states,
-                attention_mask,
-                scaling=self.scaling,
-            )
-        attn_output = attn_output.reshape(*input_shape, -1).contiguous()
-        attn_output = self.o_proj(attn_output)
-
-        return attn_output, attn_weights
-
-
-class QEffQwen3MoeDecoderLayer(Qwen3MoeDecoderLayer):
-    @torch.compiler.nested_compile_region
-    def forward(
-        self,
-        hidden_states: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_value: Optional[Tuple[torch.Tensor]] = None,
-        comp_ctx_lengths: Optional[torch.LongTensor] = None,
-        batch_index: Optional[torch.LongTensor] = None,
-        use_cache: Optional[bool] = False,
-        cache_position: Optional[torch.LongTensor] = None,
-        sin_cached=None,
-        cos_cached=None,
-        **kwargs,
-    ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
-        """
-        Args:
-            hidden_states (`torch.FloatTensor`): input to the layer of shape `(batch, seq_len, embed_dim)`
-            attention_mask (`torch.FloatTensor`, *optional*): attention mask of size
-                `(batch, sequence_length)` where padding elements are indicated by 0.
-            use_cache (`bool`, *optional*):
-                If set to `True`, `past_key_values` key value states are returned and can be used to speed up decoding
-                (see `past_key_values`).
-            past_key_value (`Tuple(torch.FloatTensor)`, *optional*): cached past key and value projection states
-            cache_position (`torch.LongTensor` of shape `(sequence_length)`, *optional*):
-                Indices depicting the position of the input sequence tokens in the sequence.
-            kwargs (`dict`, *optional*):
-                Arbitrary kwargs to be ignored, used for FSDP and other methods that injects code
-                into the model
-        """
-
-        residual = hidden_states
-
-        hidden_states = self.input_layernorm(hidden_states)
-
-        # Self Attention
-        hidden_states, _ = self.self_attn(
-            hidden_states=hidden_states,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            past_key_values=past_key_value,
-            comp_ctx_lengths=comp_ctx_lengths,
-            batch_index=batch_index,
-            use_cache=use_cache,
-            cache_position=cache_position,
-            sin_cached=sin_cached,
-            cos_cached=cos_cached,
-        )
-        hidden_states = residual + hidden_states
-
-        # Fully Connected
-        residual = hidden_states
-        hidden_states = self.post_attention_layernorm(hidden_states)
-
-        hidden_states = self.mlp(hidden_states)
-        if isinstance(hidden_states, tuple):
-            hidden_states, _ = hidden_states
-
-        hidden_states = residual + hidden_states
-
-        return hidden_states
-
-
-class QEffQwen3MoeModel(Qwen3MoeModel):
-    def __qeff_init__(self):
-        self.rotary_emb = QEffQwen3MoeRotaryEmbedding(config=self.config)
-        self.sin_cached = torch.nn.Parameter(self.rotary_emb.sin_cached)
-        self.cos_cached = torch.nn.Parameter(self.rotary_emb.cos_cached)
-
-    def forward(
-        self,
-        input_ids: Optional[torch.LongTensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[List[torch.FloatTensor]] = None,
-        comp_ctx_lengths: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        use_cache: Optional[bool] = None,
-        batch_index: Optional[torch.LongTensor] = None,
-        output_hidden_states: Optional[bool] = None,
-        cache_position: Optional[torch.LongTensor] = None,
-    ) -> MoeModelOutputWithPast:
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
-        )
-        use_cache = use_cache if use_cache is not None else self.config.use_cache
-
-        if (input_ids is None) ^ (inputs_embeds is not None):
-            raise ValueError("You must specify exactly one of input_ids or inputs_embeds")
-
-        if inputs_embeds is None:
-            inputs_embeds = self.embed_tokens(input_ids)
-
-        past_key_values_length = 0
-        if past_key_values is not None:
-            past_key_values_length = past_key_values[0][0].shape[2]
-
-        past_key_values = QEffDynamicCache.from_legacy_cache(past_key_values)
-
-        if position_ids is None:
-            position_ids = cache_position.unsqueeze(0)
-
-        causal_mask = _create_causal_mask(position_ids=position_ids, target_length=past_key_values_length)
-
-        hidden_states = inputs_embeds
-
-        # decoder layers
-        all_hidden_states = () if output_hidden_states else None
-        sin = self.sin_cached[position_ids].unsqueeze(1)
-        cos = self.cos_cached[position_ids].unsqueeze(1)
-
-        for decoder_layer in self.layers:
-            if output_hidden_states:
-                all_hidden_states += (hidden_states,)
-
-            hidden_states = decoder_layer(
-                hidden_states,
-                attention_mask=causal_mask,
-                position_ids=position_ids,
-                past_key_value=past_key_values,
-                comp_ctx_lengths=comp_ctx_lengths,
-                batch_index=batch_index,
-                use_cache=use_cache,
-                cache_position=cache_position,
-                sin_cached=sin,
-                cos_cached=cos,
-            )
-
-        hidden_states = self.norm(hidden_states)
-
-        # add hidden states from the last decoder layer
-        if output_hidden_states:
-            all_hidden_states += (hidden_states,)
-
-        past_key_values = past_key_values.to_legacy_cache()
-
-        return MoeModelOutputWithPast(
-            last_hidden_state=hidden_states,
-            past_key_values=past_key_values,
-            hidden_states=all_hidden_states,
-        )
-
-
-class QEffQwen3MoeForCausalLM(Qwen3MoeForCausalLM):
-    def get_submodules_for_export(self) -> Type[nn.Module]:
-        """
-        Return the set of class used as the repeated layer across the model for subfunction extraction.
-        Notes:
-            This method should return the *class object* (not an instance).
-            Downstream code can use this to find/build subfunctions for repeated blocks.
-        """
-        return {QEffQwen3MoeDecoderLayer}
-
-    def forward(
-        self,
-        input_ids: Optional[torch.LongTensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[List[torch.FloatTensor]] = None,
-        comp_ctx_lengths: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        batch_index: Optional[torch.LongTensor] = None,
-        use_cache: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        cache_position: Optional[torch.LongTensor] = None,
-        **kwargs,
-    ) -> MoeCausalLMOutputWithPast:
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
-        )
-        # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
-        outputs = self.model(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            past_key_values=past_key_values,
-            comp_ctx_lengths=comp_ctx_lengths,
-            inputs_embeds=inputs_embeds,
-            batch_index=batch_index,
-            use_cache=use_cache,
-            output_hidden_states=output_hidden_states,
-            cache_position=cache_position,
-            **kwargs,
-        )
-
-        hidden_states = outputs.last_hidden_state
-        logit_idx = position_ids.to(torch.int32).argmax(1, keepdim=True)
-        hidden_states = outputs.last_hidden_state[torch.arange(position_ids.shape[0]).view(-1, 1), logit_idx]
-        logits = self.lm_head(hidden_states).float()
-
-        return MoeCausalLMOutputWithPast(
-            logits=logits,
-            past_key_values=outputs.past_key_values,
-            hidden_states=outputs.hidden_states,
-            attentions=outputs.attentions,
-            router_logits=outputs.router_logits,
-        )
-
-python - <<'PY'
-import torch
 from QEfficient.transformers.models.modeling_auto import QEFFAutoModelForCausalLM
-m = QEFFAutoModelForCausalLM.from_pretrained("openai/gpt-oss-20b")  # or your source
-mod = m.model
-# inspect layer 0 experts module
-exp = mod.model.layers[0].mlp.experts
-print("experts attrs with 'down':", [n for n,_ in exp.named_parameters() if "down" in n])
-print("experts attrs with 'gate_up':", [n for n,_ in exp.named_parameters() if "gate_up" in n])
-print("all expert param names:", [n for n,_ in exp.named_parameters()])
+from transformers import AutoTokenizer
+
+
+def _shard_and_save(state_dict, out_dir: Path, max_shard_bytes: int):
+    shards = []
+    current, current_bytes = {}, 0
+    for k, v in state_dict.items():
+        nbytes = v.numel() * v.element_size()
+        if current and current_bytes + nbytes > max_shard_bytes:
+            shards.append(current)
+            current, current_bytes = {}, 0
+        current[k] = v
+        current_bytes += nbytes
+    if current:
+        shards.append(current)
+
+    total = len(shards)
+    weight_map = {}
+    if total == 1:
+        fname = "model.safetensors"
+        save_file(shards[0], str(out_dir / fname), metadata={"format": "pt"})
+        for k in shards[0]:
+            weight_map[k] = fname
+    else:
+        for i, shard in enumerate(shards, 1):
+            fname = f"model-{i:05d}-of-{total:05d}.safetensors"
+            save_file(shard, str(out_dir / fname), metadata={"format": "pt"})
+            for k in shard:
+                weight_map[k] = fname
+
+    total_size = sum(v.numel() * v.element_size() for v in state_dict.values())
+    index = {"metadata": {"total_size": total_size}, "weight_map": weight_map}
+    with open(out_dir / "model.safetensors.index.json", "w") as f:
+        json.dump(index, f, indent=2)
+    return total
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--model", default="openai/gpt-oss-20b")
+    ap.add_argument("--out", default="gpt-oss-20b-dequant")
+    ap.add_argument("--dtype", default="bfloat16", choices=["float32", "bfloat16", "float16"])
+    ap.add_argument("--num-layers", type=int, default=0,
+                    help="if >0, truncate to this many hidden layers for a smoke test")
+    ap.add_argument("--shard-gb", type=float, default=5.0)
+    ap.add_argument("--keep-fused", action="store_true",
+                    help="keep redundant fused gate_up_proj tensors (default: drop them)")
+    args = ap.parse_args()
+
+    save_dtype = getattr(torch, args.dtype)
+    out_dir = Path(args.out)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"Loading + dequantizing {args.model} via QEfficient from_pretrained ...")
+    qeff_model = QEFFAutoModelForCausalLM.from_pretrained(args.model, continuous_batching=False)
+    model = qeff_model.model
+
+    if args.num_layers and args.num_layers > 0:
+        try:
+            n = args.num_layers
+            model.model.layers = model.model.layers[:n]
+            model.config.num_hidden_layers = n
+            if getattr(model.config, "layer_types", None) is not None:
+                model.config.layer_types = model.config.layer_types[:n]
+            print(f"  (smoke test) truncated to {n} layers")
+        except Exception as exc:
+            print(f"  (smoke test) could not truncate layers: {exc}")
+
+    print(f"Casting to {args.dtype} ...")
+    model = model.to(dtype=save_dtype)
+
+    if getattr(model.config, "quantization_config", None) is not None:
+        try:
+            delattr(model.config, "quantization_config")
+        except Exception:
+            model.config.quantization_config = None
+
+    print("Collecting state_dict directly from model (preserves down_proj) ...")
+    sd = {}
+    for k, v in model.state_dict().items():
+        t = v.detach()
+        if t.is_floating_point():
+            t = t.to(save_dtype)
+        sd[k] = t.contiguous()
+
+    if not args.keep_fused:
+        before = len(sd)
+        sd = {k: v for k, v in sd.items()
+              if not (k.endswith("experts.gate_up_proj") or k.endswith("experts.gate_up_proj_bias"))}
+        print(f"  dropped {before - len(sd)} redundant fused gate_up_proj tensors")
+
+    num_layers = model.config.num_hidden_layers
+    missing = []
+    for layer in range(num_layers):
+        for req in ("experts.gate_proj", "experts.up_proj", "experts.down_proj"):
+            key = f"model.layers.{layer}.mlp.{req}"
+            if key not in sd:
+                missing.append(key)
+    if missing:
+        raise RuntimeError(
+            f"Refusing to save incomplete checkpoint. Missing {len(missing)} required "
+            f"expert weights, e.g.: {missing[:5]}"
+        )
+    print(f"  verified gate_proj / up_proj / down_proj present for all {num_layers} layers")
+
+    print(f"Saving plain-float checkpoint to {out_dir} ...")
+    n_shards = _shard_and_save(sd, out_dir, int(args.shard_gb * 1e9))
+    model.config.save_pretrained(str(out_dir))
+    AutoTokenizer.from_pretrained(args.model).save_pretrained(str(out_dir))
+
+    print(f"\nDone. Wrote {n_shards} shard(s) to: {out_dir.resolve()}")
+    print(f'Point your export script at: model_name = "{out_dir}"')
+    for p in sorted(out_dir.glob("*.safetensors")):
+        print(f"    {p.name}  ({p.stat().st_size / 1e9:.2f} GB)")
+
+
+if __name__ == "__main__":
+    main()
+
+
+python3 dequantize.py --model openai/gpt-oss-20b --out gpt-oss-20b-dequant --dtype bfloat16
+python - <<'PY'
+from safetensors import safe_open
+import glob
+n = 0
+for st in glob.glob("gpt-oss-20b-dequant/*.safetensors"):
+    with safe_open(st, framework="pt") as f:
+        for k in f.keys():
+            if k.endswith("experts.down_proj"):
+                n += 1
+print("down_proj weight tensors:", n, "(expect 24)")
 PY
-`CLIPImageProcessor` requires torchvision (not installed); falling back to `CLIPImageProcessorPil` for backward compatibility. Install torchvision to use the default backend, or import `CLIPImageProcessorPil` directly to silence this warning.
-`SiglipImageProcessor` requires torchvision (not installed); falling back to `SiglipImageProcessorPil` for backward compatibility. Install torchvision to use the default backend, or import `SiglipImageProcessorPil` directly to silence this warning.
-`torch_dtype` is deprecated! Use `dtype` instead!
-Loading weights: 100%|████████████████████████████████████████████████████████████████████████████████████| 459/459 [00:03<00:00, 116.56it/s]
-experts attrs with 'down': ['down_proj', 'down_proj_bias']
-experts attrs with 'gate_up': ['gate_up_proj', 'gate_up_proj_bias']
-all expert param names: ['gate_up_proj', 'gate_up_proj_bias', 'down_proj', 'down_proj_bias', 'gate_proj', 'up_proj', 'gate_proj_bias', 'up_proj_bias']
