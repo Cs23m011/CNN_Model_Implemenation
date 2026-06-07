@@ -463,3 +463,10 @@ print("experts attrs with 'down':", [n for n,_ in exp.named_parameters() if "dow
 print("experts attrs with 'gate_up':", [n for n,_ in exp.named_parameters() if "gate_up" in n])
 print("all expert param names:", [n for n,_ in exp.named_parameters()])
 PY
+`CLIPImageProcessor` requires torchvision (not installed); falling back to `CLIPImageProcessorPil` for backward compatibility. Install torchvision to use the default backend, or import `CLIPImageProcessorPil` directly to silence this warning.
+`SiglipImageProcessor` requires torchvision (not installed); falling back to `SiglipImageProcessorPil` for backward compatibility. Install torchvision to use the default backend, or import `SiglipImageProcessorPil` directly to silence this warning.
+`torch_dtype` is deprecated! Use `dtype` instead!
+Loading weights: 100%|████████████████████████████████████████████████████████████████████████████████████| 459/459 [00:03<00:00, 116.56it/s]
+experts attrs with 'down': ['down_proj', 'down_proj_bias']
+experts attrs with 'gate_up': ['gate_up_proj', 'gate_up_proj_bias']
+all expert param names: ['gate_up_proj', 'gate_up_proj_bias', 'down_proj', 'down_proj_bias', 'gate_proj', 'up_proj', 'gate_proj_bias', 'up_proj_bias']
