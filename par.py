@@ -475,3 +475,12 @@ Here's the output. Key observations:
   - There is no experts.down_proj in the matching keys (your filter didn't include it, but worth noting separately if needed).
   - gate_up_proj_bias exists as a combined key alongside the separate gate_proj_bias and up_proj_bias.
 
+python - <<'PY'
+from safetensors import safe_open
+import glob
+for st in glob.glob("gpt-oss-20b-dequant/*.safetensors"):
+    with safe_open(st, framework="pt") as f:
+        for k in f.keys():
+            if "experts.down_proj" in k:
+                print(k, f.get_slice(k).get_shape())
+PY
