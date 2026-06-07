@@ -495,38 +495,41 @@ RuntimeError: Export failed with use_dynamo=True and use_onnx_subfunctions=True 
 <class 'TypeError'>: forward() missing 1 required positional argument: 'arg26_1'
 
 (Refer to the full stack trace above for more information.)). Retry export with use_onnx_subfunctions=False for this model/runtime.
-python3 - <<'PY'
 import torch, inspect
-from torch._higher_order_ops import invoke_subgraph as M
+  from torch._higher_order_ops.invoke_subgraph import invoke_subgraph, invoke_subgraph_placeholder, InvokeSubgraphHOP
 
-print("torch:", torch.__version__)
-print("file :", M.__file__)
-print("=" * 60)
+  print("torch:", torch.__version__)
+  print("file :", inspect.getfile(InvokeSubgraphHOP))
+  print("=" * 60)
 
-# --- Part 1: the placeholder wrapper (PR #182230 made it take kwargs) ---
-src_wrap = inspect.getsource(M._invoke_subgraph_placeholder_wrapper)
-print("WRAPPER SIGNATURE:")
-print(src_wrap.splitlines()[0])
-print("  -> has kwargs param:", "kwargs" in src_wrap.splitlines()[0])
-print("=" * 60)
+  # --- Part 1: the placeholder wrapper ---
+  src_wrap = inspect.getsource(invoke_subgraph_placeholder)
+  print("WRAPPER SIGNATURE:")
+  print(src_wrap.splitlines()[0])
+  print("  -> has kwargs param:", "kwargs" in src_wrap.splitlines()[0])
+  print("=" * 60)
 
-# --- Part 2: gen_schema (PR #182230 added the 'reuse functionalized GM' guard) ---
-# gen_schema lives on the HOP instance's class
-gen = type(M.invoke_subgraph).gen_schema if hasattr(M, "invoke_subgraph") else None
-if gen is None:
-    # fallback: find it on InvokeSubgraphHOP
-    from torch._higher_order_ops.invoke_subgraph import InvokeSubgraphHOP
-    gen = InvokeSubgraphHOP.gen_schema
-src_gs = inspect.getsource(gen)
-print("gen_schema:")
-print("  -> mentions FunctionalTensor :", "FunctionalTensor" in src_gs)
-print("  -> has all(isinstance ...) guard:", "all(" in src_gs and "isinstance" in src_gs)
-print("  -> still ALWAYS calls materialize_as_graph unconditionally:",
-      src_gs.count("materialize_as_graph") >= 1 and "FunctionalTensor" not in src_gs)
-print("=" * 60)
-print("VERDICT — PR #182230 invoke_subgraph fix present:",
-      ("kwargs" in src_wrap.splitlines()[0]) and ("FunctionalTensor" in src_gs))
-print("=" * 60)
-print("---- full gen_schema source for inspection ----")
-print(src_gs)
-PY
+  # --- Part 2: gen_schema ---
+  src_gs = inspect.getsource(InvokeSubgraphHOP.gen_schema)
+  print("gen_schema:")
+  print("  -> mentions FunctionalTensor :", "FunctionalTensor" in src_gs)
+  print("  -> has all(isinstance ...) guard:", "all(" in src_gs and "isinstance" in src_gs)
+  print("  -> always calls materialize_as_graph unconditionally:",
+        src_gs.count("materialize_as_graph") >= 1 and "FunctionalTensor" not in src_gs)
+  print("=" * 60)
+  print("VERDICT — PR #182230 invoke_subgraph fix present:",
+        ("kwargs" in src_wrap.splitlines()[0]) and ("FunctionalTensor" in src_gs))
+  print("=" * 60)
+  print("---- full gen_schema source for inspection ----")
+  print(src_gs)
+  torch: 2.13.0.dev20260603+cpu───────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯    file : /home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/invoke_subgraph.py
+ ─   ============================================================────────────────────────────────────────────────────────────────────────────
+  esc… +28 lines (ctrl+o to expand)                                                                                        ● high · /effort
+
+● VERDICT: PR #182230 fix is present in your torch 2.13.0.dev20260603+cpu.
+
+  Both checks pass:
+  - invoke_subgraph_placeholder has **kwargs in its signature ✓
+  - gen_schema has the FunctionalTensor guard — it reuses an already-functionalized GraphModule instead of unconditionally calling
+  materialize_as_graph, which would break when buffers are FunctionalTensor instances ✓
