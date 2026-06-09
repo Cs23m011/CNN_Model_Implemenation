@@ -1,437 +1,377 @@
-#!/usr/bin/env python3
-# -----------------------------------------------------------------------------
-#
-# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-# SPDX-License-Identifier: BSD-3-Clause
-#
-# -----------------------------------------------------------------------------
+python3 /home/amarshar/weightfree-tf5/examples/text_generation/dynamo.py 
+`torch_dtype` is deprecated! Use `dtype` instead!
+GlmMoeDsaConfig {
+  "architectures": [
+    "GlmMoeDsaForCausalLM"
+  ],
+  "attention_bias": false,
+  "attention_dropout": 0.0,
+  "bos_token_id": 0,
+  "dtype": "float32",
+  "eos_token_id": [
+    154820,
+    154827,
+    154829
+  ],
+  "ep_size": 1,
+  "first_k_dense_replace": 1,
+  "hidden_act": "silu",
+  "hidden_size": 8,
+  "index_head_dim": 128,
+  "index_n_heads": 4,
+  "index_topk": 2048,
+  "indexer_rope_interleave": true,
+  "initializer_range": 0.02,
+  "intermediate_size": 32,
+  "kv_lora_rank": 512,
+  "max_position_embeddings": 202752,
+  "mlp_layer_types": [
+    "dense",
+    "sparse"
+  ],
+  "model_type": "glm_moe_dsa",
+  "moe_intermediate_size": 32,
+  "moe_layer_freq": 1,
+  "n_group": 1,
+  "n_routed_experts": 256,
+  "n_shared_experts": 1,
+  "norm_topk_prob": true,
+  "num_attention_heads": 8,
+  "num_experts_per_tok": 8,
+  "num_hidden_layers": 2,
+  "num_key_value_heads": 8,
+  "num_nextn_predict_layers": 1,
+  "pad_token_id": 154820,
+  "pretraining_tp": 1,
+  "q_lora_rank": 32,
+  "qk_head_dim": 256,
+  "qk_nope_head_dim": 192,
+  "qk_rope_head_dim": 64,
+  "rms_norm_eps": 1e-05,
+  "rope_interleave": true,
+  "rope_parameters": {
+    "rope_theta": 1000000,
+    "rope_type": "default"
+  },
+  "routed_scaling_factor": 2.5,
+  "scoring_func": "sigmoid",
+  "tie_word_embeddings": false,
+  "topk_group": 1,
+  "topk_method": "noaux_tc",
+  "transformers_version": "5.5.4",
+  "use_cache": true,
+  "v_head_dim": 256,
+  "vocab_size": 154880
+}
 
-import argparse
-import sys
-import time
-from pathlib import Path
+WARNING - QEfficient - Setting tokenizer padding_side to 'right', got left
 
-import numpy as np
-import torch
-from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
+--- Original HF Model Outputs (Torch CPU) ---
+Loading weights: 100%|██████████████████████████████████████████████████████████████████████████████████████| 41/41 [00:00<00:00, 763.04it/s]
+GlmMoeDsaForCausalLM LOAD REPORT from: tiny-random/glm-5.1
+Key                                                  | Status     |  | 
+-----------------------------------------------------+------------+--+-
+model.layers.2.mlp.experts.gate_up_proj              | UNEXPECTED |  | 
+model.layers.2.enorm.weight                          | UNEXPECTED |  | 
+model.layers.2.mlp.gate.weight                       | UNEXPECTED |  | 
+model.layers.2.self_attn.kv_a_proj_with_mqa.weight   | UNEXPECTED |  | 
+model.layers.2.mlp.shared_experts.down_proj.weight   | UNEXPECTED |  | 
+model.layers.2.self_attn.indexer.weights_proj.weight | UNEXPECTED |  | 
+model.layers.2.self_attn.indexer.k_norm.weight       | UNEXPECTED |  | 
+model.layers.2.mlp.experts.down_proj                 | UNEXPECTED |  | 
+model.layers.2.self_attn.q_a_layernorm.weight        | UNEXPECTED |  | 
+model.layers.2.input_layernorm.weight                | UNEXPECTED |  | 
+model.layers.2.hnorm.weight                          | UNEXPECTED |  | 
+model.layers.2.self_attn.indexer.k_norm.bias         | UNEXPECTED |  | 
+model.layers.2.shared_head.norm.weight               | UNEXPECTED |  | 
+model.layers.2.self_attn.kv_a_layernorm.weight       | UNEXPECTED |  | 
+model.layers.2.self_attn.q_b_proj.weight             | UNEXPECTED |  | 
+model.layers.2.self_attn.indexer.wk.weight           | UNEXPECTED |  | 
+model.layers.2.mlp.shared_experts.gate_proj.weight   | UNEXPECTED |  | 
+model.layers.2.post_attention_layernorm.weight       | UNEXPECTED |  | 
+model.layers.2.self_attn.o_proj.weight               | UNEXPECTED |  | 
+model.layers.2.eh_proj.weight                        | UNEXPECTED |  | 
+model.layers.2.self_attn.q_a_proj.weight             | UNEXPECTED |  | 
+model.layers.2.self_attn.kv_b_proj.weight            | UNEXPECTED |  | 
+model.layers.2.self_attn.indexer.wq_b.weight         | UNEXPECTED |  | 
+model.layers.2.mlp.gate.e_score_correction_bias      | UNEXPECTED |  | 
+model.layers.2.mlp.shared_experts.up_proj.weight     | UNEXPECTED |  | 
 
+Notes:
+- UNEXPECTED:   can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+The following generation flags are not valid and may be ignored: ['top_p']. Set `TRANSFORMERS_VERBOSITY=info` for more details.
+Original HF Model Outputs (Torch CPU): 
 
-def _add_repo_root_to_path() -> None:
-    # This file is at examples/text_generation/dynamo.py → repo root is parent(2)
-    repo_root = Path(__file__).resolve().parents[2]
-    repo_root_str = str(repo_root)
-    if repo_root_str not in sys.path:
-        sys.path.insert(0, repo_root_str)
+Prompt: ['My name is']
+Completion: ' Coun Coun Coun Coun Coun Coun Coun Coun Coun CounGets Coun maxSize maxSizesto주세요주세요주세요주세요주세요주세요sto maxSize maxSize'
+[31123 31123 31123 31123 31123 31123 31123 31123 31123 31123 49041 31123
+ 61501 61501 32895 90901 90901 90901 90901 90901 90901 32895 61501 61501]
+Loading weights: 100%|██████████████████████████████████████████████████████████████████████████████████████| 41/41 [00:00<00:00, 838.49it/s]
+GlmMoeDsaForCausalLM LOAD REPORT from: tiny-random/glm-5.1
+Key                                                  | Status     |  | 
+-----------------------------------------------------+------------+--+-
+model.layers.2.mlp.experts.gate_up_proj              | UNEXPECTED |  | 
+model.layers.2.enorm.weight                          | UNEXPECTED |  | 
+model.layers.2.mlp.gate.weight                       | UNEXPECTED |  | 
+model.layers.2.self_attn.kv_a_proj_with_mqa.weight   | UNEXPECTED |  | 
+model.layers.2.mlp.shared_experts.down_proj.weight   | UNEXPECTED |  | 
+model.layers.2.self_attn.indexer.weights_proj.weight | UNEXPECTED |  | 
+model.layers.2.self_attn.indexer.k_norm.weight       | UNEXPECTED |  | 
+model.layers.2.mlp.experts.down_proj                 | UNEXPECTED |  | 
+model.layers.2.self_attn.q_a_layernorm.weight        | UNEXPECTED |  | 
+model.layers.2.input_layernorm.weight                | UNEXPECTED |  | 
+model.layers.2.hnorm.weight                          | UNEXPECTED |  | 
+model.layers.2.self_attn.indexer.k_norm.bias         | UNEXPECTED |  | 
+model.layers.2.shared_head.norm.weight               | UNEXPECTED |  | 
+model.layers.2.self_attn.kv_a_layernorm.weight       | UNEXPECTED |  | 
+model.layers.2.self_attn.q_b_proj.weight             | UNEXPECTED |  | 
+model.layers.2.self_attn.indexer.wk.weight           | UNEXPECTED |  | 
+model.layers.2.mlp.shared_experts.gate_proj.weight   | UNEXPECTED |  | 
+model.layers.2.post_attention_layernorm.weight       | UNEXPECTED |  | 
+model.layers.2.self_attn.o_proj.weight               | UNEXPECTED |  | 
+model.layers.2.eh_proj.weight                        | UNEXPECTED |  | 
+model.layers.2.self_attn.q_a_proj.weight             | UNEXPECTED |  | 
+model.layers.2.self_attn.kv_b_proj.weight            | UNEXPECTED |  | 
+model.layers.2.self_attn.indexer.wq_b.weight         | UNEXPECTED |  | 
+model.layers.2.mlp.gate.e_score_correction_bias      | UNEXPECTED |  | 
+model.layers.2.mlp.shared_experts.up_proj.weight     | UNEXPECTED |  | 
 
+Notes:
+- UNEXPECTED:   can be ignored when loading from different task/architecture; not ok if you expect identical arch.
 
-_add_repo_root_to_path()
+--- QEff Transformed HF Model Outputs (Torch CPU) ---
+QEff Transformed HF Model Outputs (Torch CPU): 
 
-from QEfficient.transformers.models.modeling_auto import QEFFAutoModelForCausalLM
-from QEfficient.utils.run_utils import ApiRunner
-from scripts.memory_profiling import QEffMemoryProfiler
+Prompt: ['My name is']
+Completion: ['hitcitycitycitycitycitycity iPad iPad iPad iPad iPad iPad iPad iPadӰӰӰ总书记总书记 iPad总书记 iPad总书记']
+[[ 22433   8923   8923   8923   8923   8923   8923  22214  22214  22214
+   22214  22214  22214  22214  22214 152900 152900 152900 103907 103907
+   22214 103907  22214 103907]]
+[Warning]: The subfunction feature is experimental. Please note that using compile consecutively with and without subfunction may produce inconsistent results.
+[torch.onnx] Obtain model graph for `QEffGlmMoeDsaForCausalLM([...]` with `torch.export.export(..., strict=False)`...
+[Warning]: While compiling, we found certain side effects happened in the model.forward. Here are the list of potential sources you can double check: ["L['kwargs']['past_key_values'].layers[0]"]
+[Warning]: While compiling, we found certain side effects happened in the model.forward. Here are the list of potential sources you can double check: ["L['kwargs']['past_key_values'].layers[1]"]
+[torch.onnx] Obtain model graph for `QEffGlmMoeDsaForCausalLM([...]` with `torch.export.export(..., strict=False)`... ❌
+[torch.onnx] Obtain model graph for `QEffGlmMoeDsaForCausalLM([...]` with `torch.export.export(..., strict=True)`...
+[torch.onnx] Obtain model graph for `QEffGlmMoeDsaForCausalLM([...]` with `torch.export.export(..., strict=True)`... ✅
+[torch.onnx] Run decompositions...
+[Warning]: `isinstance(treespec, LeafSpec)` is deprecated, use `isinstance(treespec, TreeSpec) and treespec.is_leaf()` instead.
+[torch.onnx] Run decompositions... ✅
+[torch.onnx] Translate the graph into ONNX...
+[torch.onnx] Translate the graph into ONNX... ✅
+[Warning]: # The axis name: batch_size will not be used, since it shares the same shape constraints with another axis: batch_size.
+[Warning]: # The axis name: seq_len will not be used, since it shares the same shape constraints with another axis: seq_len.
+[Warning]: # The axis name: ctx_len will not be used, since it shares the same shape constraints with another axis: ctx_len.
+WARNING - QEfficient.base.modeling_qeff - Weight clearing failed, continuing: Cannot swap t1 because it has weakref associated with it
+[TIMING] qeff_model.export: 25.656 seconds
+[MEMORY] export peak RSS: 972.05 MB
+[ARTIFACT] onnx_path=/home/amarshar/efficient-transformers/GlmMoeDsaForCausalLM/GlmMoeDsaForCausalLM-8fdf7c1bd2f0ac74/GlmMoeDsaForCausalLM.onnx
 
+QEFFICIENT PERFORMANCE MONITORING REPORT
+============================================================
+Peak Memory Usage:
+   • RSS (Physical): 972.05 MB at 01:08:38
+   • VMS (Virtual):  16396.48 MB at 01:08:36
+   • Peak during:    Export
 
-def _str_to_bool(value: str) -> bool:
-    value = str(value).strip().lower()
-    if value in {"true", "1", "yes", "y", "on"}:
-        return True
-    if value in {"false", "0", "no", "n", "off"}:
-        return False
-    raise argparse.ArgumentTypeError(f"Invalid boolean value: {value!r}. Use true/false.")
+Memory Statistics:
+   • Current RSS:    972.05 MB (Delta: +7.86 MB)
+   • Current VMS:    16396.48 MB (Delta: +115.56 MB)
+   • Average RSS:    970.58 MB
+   • Min/Max RSS:    964.19 / 972.05 MB
+   • Memory Range:   7.86 MB
+Disk I/O Statistics:
+   • Total Read:     59.04 MB
+   • Total Write:    56.92 MB
+   • Peak Read Rate: 75.04 MB/s
+   • Peak Write Rate:132.10 MB/s
+   • Avg Read Rate:  5.03 MB/s
+   • Avg Write Rate: 6.61 MB/s
 
+Monitoring Info:
+   • Duration:       25.6 seconds
+   • Data Points:    20
+   • Operations:     2
+   • Sampling Rate:  0.05s
 
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run export/ORT/compile flow with timing and export RAM profiling.")
-    parser.add_argument(
-        "--model-name",
-        type=str,
-        default="tiny-random/glm-5.1",
-        help="Hugging Face model id.",
-    )
-    parser.add_argument(
-        "--use-dynamo",
-        type=_str_to_bool,
-        default=True,
-        metavar="{true,false}",
-        help="Whether to enable dynamo during export (true/false).",
-    )
-    parser.add_argument(
-        "--use-onnx-subfunctions",
-        type=_str_to_bool,
-        default=True,
-        metavar="{true,false}",
-        help="Whether to enable ONNX subfunctions during export/compile (true/false).",
-    )
-    parser.add_argument(
-        "--use-weight-free",
-        type=_str_to_bool,
-        default=True,
-        metavar="{true,false}",
-        help="Also run weight-free export (meta model, weights loaded from checkpoint at ORT time).",
-    )
-    parser.add_argument(
-        "--num-hidden-layers",
-        type=int,
-        default=2,
-        help="Override config.num_hidden_layers for quick experiments.",
-    )
-    parser.add_argument(
-        "--torch-dtype",
-        choices=["float16", "bfloat16", "float32"],
-        default="float32",
-        help="Dtype to set in config.torch_dtype.",
-    )
-    parser.add_argument("--prompt", type=str, default="My name is")
-    parser.add_argument("--prompt-len", type=int, default=8)
-    parser.add_argument("--ctx-len", type=int, default=32)
-    parser.add_argument(
-        "--profile-output",
-        type=Path,
-        default=Path(__file__).resolve().parent / "export_memory_profile.png",
-        help="Output path for export RAM profile graph.",
-    )
-    return parser.parse_args()
+QEfficient Operations Timeline:
+    1.    0.0s - Export (25.7s) 
+    2.   25.7s - Completion  
+[MEMORY] export profile graph saved to: /home/amarshar/weightfree-tf5/examples/text_generation/export_memory_profile.png
 
+--- QEff Transformed Onnx Model Outputs (OnnxRuntime CPU) ---
+QEff Transformed Onnx Model Outputs (OnnxRuntime CPU): 
 
-def _resolve_dtype(dtype_name: str) -> torch.dtype:
-    return getattr(torch, dtype_name)
+Prompt: ['My name is']
+Completion: ['hitcitycitycitycitycitycity iPad iPad iPad iPad iPad iPad iPad iPadӰӰӰ总书记总书记 iPad总书记 iPad总书记']
+[[ 22433   8923   8923   8923   8923   8923   8923  22214  22214  22214
+   22214  22214  22214  22214  22214 152900 152900 152900 103907 103907
+   22214 103907  22214 103907]]
+['/opt/qti-aic/exec/qaic-compile', '-aic-hw', '-aic-hw-version=ai100', '-m=/home/amarshar/efficient-transformers/GlmMoeDsaForCausalLM/GlmMoeDsaForCausalLM-8fdf7c1bd2f0ac74/GlmMoeDsaForCausalLM.onnx', '-retained-state', '-convert-to-fp16', '-aic-num-cores=16', '-sub-functions', '-network-specialization-config=/home/amarshar/efficient-transformers/GlmMoeDsaForCausalLM/GlmMoeDsaForCausalLM-8fdf7c1bd2f0ac74/qpc-9ba00b62a25037be/specializations.json', '-custom-IO-list-file=/home/amarshar/efficient-transformers/GlmMoeDsaForCausalLM/GlmMoeDsaForCausalLM-8fdf7c1bd2f0ac74/qpc-9ba00b62a25037be/custom_io.yaml', '-aic-binary-dir=/home/amarshar/efficient-transformers/GlmMoeDsaForCausalLM/GlmMoeDsaForCausalLM-8fdf7c1bd2f0ac74/qpc-9ba00b62a25037be/qpc']
+[TIMING] qeff_model.compile: 13.969 seconds
+[ARTIFACT] qpc_path=/home/amarshar/efficient-transformers/GlmMoeDsaForCausalLM/GlmMoeDsaForCausalLM-8fdf7c1bd2f0ac74/qpc-9ba00b62a25037be/qpc
+compile done
+QEff Transformed Onnx Model Outputs(AIC Backend)
 
+Prompt : My name is
+Completion :hitcitycitycitycitycitycity iPad iPad iPad iPad iPad iPad iPad iPadӰӰӰ总书记总书记 iPad总书记 iPad总书记 iPad总书记 iPad总书记input= ['My name is']
+output= [['hitcitycitycitycitycitycity iPad iPad iPad iPad iPad iPad iPad iPadӰӰӰ总书记总书记 iPad总书记 iPad总书记 iPad总书记 iPad总书记 iPad']]
+Average Prefill time a.k.a TTFT is= 0.0 sec        
+Decode is= 633.95 tokens/sec        
+Total is= 580.38 tokens/sec        
+Total (E2E) inference time is= 0.05 sec
+Average Prefill time a.k.a TTFT is= 0.0 sec        
+Decode is= 633.95 tokens/sec        
+Total is= 580.38 tokens/sec        
+Total (E2E) inference time is= 0.05 sec
+[array([[ 22433,   8923,   8923,   8923,   8923,   8923,   8923,  22214,
+         22214,  22214,  22214,  22214,  22214,  22214,  22214, 152900,
+        152900, 152900, 103907, 103907,  22214, 103907,  22214, 103907,
+         22214, 103907,  22214, 103907,  22214, 154820, 154820, 154820]])]
+[COMPARE] original lengths: {'hf_tokens': 24, 'pt_tokens': 24, 'ort_tokens': 24, 'aic_generated_ids': 32}
+[COMPARE] trimmed length used: 24
+[COMPARE] trimmed outputs together:
+  hf_tokens:  [31123, 31123, 31123, 31123, 31123, 31123, 31123, 31123, 31123, 31123, 49041, 31123, 61501, 61501, 32895, 90901, 90901, 90901, 90901, 90901, 90901, 32895, 61501, 61501]
+  pt_tokens:  [22433, 8923, 8923, 8923, 8923, 8923, 8923, 22214, 22214, 22214, 22214, 22214, 22214, 22214, 22214, 152900, 152900, 152900, 103907, 103907, 22214, 103907, 22214, 103907]
+  ort_tokens: [22433, 8923, 8923, 8923, 8923, 8923, 8923, 22214, 22214, 22214, 22214, 22214, 22214, 22214, 22214, 152900, 152900, 152900, 103907, 103907, 22214, 103907, 22214, 103907]
+  aic_tokens: [22433, 8923, 8923, 8923, 8923, 8923, 8923, 22214, 22214, 22214, 22214, 22214, 22214, 22214, 22214, 152900, 152900, 152900, 103907, 103907, 22214, 103907, 22214, 103907]
+[COMPARE] Outputs do NOT match.
 
-def _to_1d_tensor(x) -> torch.Tensor:
-    if isinstance(x, torch.Tensor):
-        t = x.detach().cpu()
-    elif isinstance(x, np.ndarray):
-        t = torch.from_numpy(x)
-    elif isinstance(x, (list, tuple)):
-        if len(x) == 1 and isinstance(x[0], (np.ndarray, torch.Tensor, list, tuple)):
-            return _to_1d_tensor(x[0])
-        t = torch.tensor(x)
-    else:
-        t = torch.as_tensor(x)
-    return t.reshape(-1)
+============================================================
+WEIGHT-FREE EXPORT FLOW
+============================================================
 
+Building meta model (init_empty_weights) ...
+[Warning]: The subfunction feature is experimental. Please note that using compile consecutively with and without subfunction may produce inconsistent results.
+[torch.onnx] Obtain model graph for `QEffGlmMoeDsaForCausalLM([...]` with `torch.export.export(..., strict=False)`...
+[Warning]: While compiling, we found certain side effects happened in the model.forward. Here are the list of potential sources you can double check: ["L['kwargs']['past_key_values'].layers[0]"]
+[Warning]: While compiling, we found certain side effects happened in the model.forward. Here are the list of potential sources you can double check: ["L['kwargs']['past_key_values'].layers[1]"]
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503] fake tensor raised TypeError
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503] Traceback (most recent call last):
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]   File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py", line 1501, in __torch_dispatch__
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]     return self.dispatch(func, types, args, kwargs)
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]   File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py", line 2274, in dispatch
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]     return self._cached_dispatch_impl(func, types, args, kwargs)
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]   File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py", line 1649, in _cached_dispatch_impl
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]     output = self._dispatch_impl(func, types, args, kwargs)
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]   File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py", line 2651, in _dispatch_impl
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]     return registered_hop_fake_fns[func](*args, **kwargs)
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]   File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/_higher_order_ops/invoke_subgraph.py", line 1141, in _
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]     return subgraph(*operands)
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]            ^^^^^^^^^^^^^^^^^^^
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]   File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/graph_module.py", line 1000, in call_wrapped
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]     return self._wrapped_call(self, *args, **kwargs)
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]   File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/graph_module.py", line 507, in __call__
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]     raise e
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]   File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/graph_module.py", line 493, in __call__
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]     return super(self.cls, obj).__call__(*args, **kwargs)  # type: ignore[misc]
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]   File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 888, in module_call_wrapper
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]     return self.call_module(mod, forward, args, kwargs)
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]   File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/experimental/proxy_tensor.py", line 2584, in call_module
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]     return forward(*args, **kwargs)
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]            ^^^^^^^^^^^^^^^^^^^^^^^^
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]   File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py", line 881, in forward
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]     return _orig_module_call(mod, *args, **kwargs)
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]   File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]     return self._call_impl(*args, **kwargs)
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]   File "/home/amarshar/weightfree-tf5/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]     return forward_call(*args, **kwargs)
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E0610 01:09:10.384000 2588638 .venv/lib/python3.12/site-packages/torch/_subclasses/fake_tensor.py:1503] TypeError: forward() takes 26 positional arguments but 30 were given
+[torch.onnx] Obtain model graph for `QEffGlmMoeDsaForCausalLM([...]` with `torch.export.export(..., strict=False)`... ❌
+[torch.onnx] Obtain model graph for `QEffGlmMoeDsaForCausalLM([...]` with `torch.export.export(..., strict=True)`...
+[torch.onnx] Obtain model graph for `QEffGlmMoeDsaForCausalLM([...]` with `torch.export.export(..., strict=True)`... ✅
+[torch.onnx] Run decompositions...
+[Warning]: `isinstance(treespec, LeafSpec)` is deprecated, use `isinstance(treespec, TreeSpec) and treespec.is_leaf()` instead.
+[torch.onnx] Run decompositions... ✅
+[torch.onnx] Translate the graph into ONNX...
+[torch.onnx] Translate the graph into ONNX... ✅
+[Warning]: # The axis name: batch_size will not be used, since it shares the same shape constraints with another axis: batch_size.
+[Warning]: # The axis name: seq_len will not be used, since it shares the same shape constraints with another axis: seq_len.
+[Warning]: # The axis name: ctx_len will not be used, since it shares the same shape constraints with another axis: ctx_len.
+[Warning]: The `resume_download` argument is deprecated and ignored in `snapshot_download`. Downloads always resume whenever possible.
+Fetching 6 files: 100%|█████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:00<00:00, 11086.27it/s]
+Download complete: : 0.00B [00:00, ?B/s]                                                                               | 0/6 [00:00<?, ?it/s]
+[WF-TIMING] export: 17.970 seconds
+[WF-MEMORY] export peak RSS: 1178.21 MB
+[WF-ARTIFACT] onnx_path=/home/amarshar/efficient-transformers/GlmMoeDsaForCausalLM/GlmMoeDsaForCausalLM-9a49f0e54891b6f9/GlmMoeDsaForCausalLM.onnx
 
-def _convert_checkpoint_to_fp32(onnx_path: Path, weight_spec_path: Path) -> None:
-    """Copy checkpoint tensors as local FP32 files and sync ONNX embedded metadata.
-    Inlined from compare.py — required before QAIC compile for weight-free models."""
-    import json
-    import onnx as _onnx
-    from safetensors.torch import load_file as _load_file, save_file as _save_file
-    from QEfficient.exporter.weight_free import _default_weights_roots
-    from QEfficient.exporter.weight_spec import (
-        ExternalDataFile, load_weight_spec, save_weight_spec,
-    )
+QEFFICIENT PERFORMANCE MONITORING REPORT
+============================================================
+Peak Memory Usage:
+   • RSS (Physical): 1178.21 MB at 01:09:21
+   • VMS (Virtual):  16547.26 MB at 01:09:22
+   • Peak during:    Export
 
-    spec = load_weight_spec(weight_spec_path)
-    export_dir = onnx_path.parent
-    candidate_roots = _default_weights_roots(weight_spec_path, spec)
+Memory Statistics:
+   • Current RSS:    998.60 MB (Delta: -164.67 MB)
+   • Current VMS:    16547.26 MB (Delta: +21.89 MB)
+   • Average RSS:    1141.90 MB
+   • Min/Max RSS:    998.60 / 1178.21 MB
+   • Memory Range:   179.61 MB
+Disk I/O Statistics:
+   • Total Read:     11.63 MB
+   • Total Write:    7.54 MB
+   • Peak Read Rate: 6.15 MB/s
+   • Peak Write Rate:6.05 MB/s
+   • Avg Read Rate:  0.97 MB/s
+   • Avg Write Rate: 0.86 MB/s
 
-    if spec.files and all(
-        not Path(f.path).is_absolute() and (export_dir / f.path).is_file()
-        for f in spec.files
-    ):
-        print("[WF] Reusing existing local FP32 safetensors.")
-        return
+Monitoring Info:
+   • Duration:       17.9 seconds
+   • Data Points:    7
+   • Operations:     2
+   • Sampling Rate:  0.05s
 
-    needed: dict = {}
-    for inp in spec.inputs:
-        needed.setdefault(int(inp.location.file), set()).add(inp.location.key)
+QEfficient Operations Timeline:
+    1.    0.0s - Export (18.0s) [-164.7 MB]
+    2.   18.0s - Completion  
+[WF-MEMORY] export profile graph saved to: /home/amarshar/weightfree-tf5/examples/text_generation/export_memory_profile_weightfree.png
 
-    old_to_new = {old: new for new, old in enumerate(sorted(needed.keys()))}
-    new_files = []
-    for old_idx in sorted(needed.keys()):
-        ext_file = spec.files[old_idx]
-        rel_path = Path(ext_file.path)
-        abs_path = rel_path if rel_path.is_absolute() else None
-        if abs_path is None:
-            for root in candidate_roots:
-                candidate = root / rel_path
-                if candidate.exists():
-                    abs_path = candidate
-                    break
-        if abs_path is None or not abs_path.exists():
-            raise FileNotFoundError(f"Cannot resolve: {ext_file.path}")
+[WF] Converting checkpoint to local FP32 safetensors ...
+  model.safetensors (39/1598 tensors) → model_0000.safetensors
+  model_stacked_experts.safetensors (2/4 tensors) → model_0001.safetensors
+[WF] Synced embedded ONNX metadata → local FP32 paths.
+[WF-TIMING] fp32 convert: 0.368 seconds
 
-        keys_needed = needed[old_idx]
-        tensors = _load_file(str(abs_path))
-        fp32 = {k: v.to(torch.float32) for k, v in tensors.items() if k in keys_needed}
-        out_name = f"model_{old_to_new[old_idx]:04d}.safetensors"
-        _save_file(fp32, str(export_dir / out_name))
-        new_files.append(ExternalDataFile(path=out_name, format="safetensors"))
-        print(f"  {abs_path.name} ({len(keys_needed)}/{len(tensors)} tensors) → {out_name}")
+--- Weight-Free ORT inference ---
+[WF-ORT] Completion: ['hitcitycitycitycitycitycity iPad iPad iPad iPad iPad iPad iPad iPadӰӰӰ总书记总书记 iPad总书记 iPad总书记']
+[WF-ORT] token ids: [[ 22433   8923   8923   8923   8923   8923   8923  22214  22214  22214
+   22214  22214  22214  22214  22214 152900 152900 152900 103907 103907
+   22214 103907  22214 103907]]
 
-    for inp in spec.inputs:
-        inp.location.file = old_to_new[int(inp.location.file)]
-    spec.files = new_files
-    save_weight_spec(weight_spec_path, spec)
+--- Weight-Free Compile ---
+['/opt/qti-aic/exec/qaic-compile', '-aic-hw', '-aic-hw-version=ai100', '-m=/home/amarshar/efficient-transformers/GlmMoeDsaForCausalLM/GlmMoeDsaForCausalLM-9a49f0e54891b6f9/GlmMoeDsaForCausalLM.onnx', '-retained-state', '-convert-to-fp16', '-aic-num-cores=16', '-sub-functions', '-network-specialization-config=/home/amarshar/efficient-transformers/GlmMoeDsaForCausalLM/GlmMoeDsaForCausalLM-9a49f0e54891b6f9/qpc-03664960f6b744fd/specializations.json', '-custom-IO-list-file=/home/amarshar/efficient-transformers/GlmMoeDsaForCausalLM/GlmMoeDsaForCausalLM-9a49f0e54891b6f9/qpc-03664960f6b744fd/custom_io.yaml', '-aic-binary-dir=/home/amarshar/efficient-transformers/GlmMoeDsaForCausalLM/GlmMoeDsaForCausalLM-9a49f0e54891b6f9/qpc-03664960f6b744fd/qpc']
+[WF-TIMING] compile: 13.771 seconds
+[WF-ARTIFACT] qpc_path=/home/amarshar/efficient-transformers/GlmMoeDsaForCausalLM/GlmMoeDsaForCausalLM-9a49f0e54891b6f9/qpc-03664960f6b744fd/qpc
 
-    # Sync the updated paths into the com.qti.aisw.extdata metadata embedded
-    # inside the ONNX — the QAIC compiler reads weights from this, not weight_spec.json.
-    updated_json = json.dumps(
-        json.loads(weight_spec_path.read_text()), separators=(",", ":"), sort_keys=True
-    )
-    onnx_model = _onnx.load(str(onnx_path), load_external_data=False)
-    for entry in onnx_model.metadata_props:
-        if entry.key == "com.qti.aisw.extdata":
-            entry.value = updated_json
-            break
-    tmp = onnx_path.with_suffix(onnx_path.suffix + ".tmp")
-    _onnx.save(onnx_model, str(tmp))
-    tmp.replace(onnx_path)
-    print("[WF] Synced embedded ONNX metadata → local FP32 paths.")
+--- Weight-Free AIC inference ---
+WARNING - QEfficient - Please use padding_side='right' while initializing the tokenizer
 
+Prompt : My name is
+Completion :hitcitycitycitycitycitycity iPad iPad iPad iPad iPad iPad iPad iPadӰӰӰ总书记总书记 iPad总书记 iPad总书记 iPad总书记 iPad总书记input= ['My name is']
+output= [['hitcitycitycitycitycitycity iPad iPad iPad iPad iPad iPad iPad iPadӰӰӰ总书记总书记 iPad总书记 iPad总书记 iPad总书记 iPad总书记 iPad']]
+Average Prefill time a.k.a TTFT is= 0.0 sec        
+Decode is= 553.4 tokens/sec        
+Total is= 518.99 tokens/sec        
+Total (E2E) inference time is= 0.05 sec
+[WF-AIC] tokens: [array([[ 22433,   8923,   8923,   8923,   8923,   8923,   8923,  22214,
+         22214,  22214,  22214,  22214,  22214,  22214,  22214, 152900,
+        152900, 152900, 103907, 103907,  22214, 103907,  22214, 103907,
+         22214, 103907,  22214, 103907,  22214, 154820, 154820, 154820]])]
 
-def _run_weight_free_flow(args, runner, qeff_model_regular, hf_tokens, pt_tokens, ort_tokens):
-    """Run weight-free export + ORT + compile and compare results."""
-    from accelerate import init_empty_weights
-    from QEfficient.exporter.weight_free import load_weight_free_ort_inputs
-    from QEfficient.exporter.weight_spec import resolve_weight_spec_path
-    import onnxruntime as ort
-
-    print("\n" + "=" * 60)
-    print("WEIGHT-FREE EXPORT FLOW")
-    print("=" * 60)
-
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name)
-    config = AutoConfig.from_pretrained(args.model_name)
-    config.torch_dtype = torch.float32
-
-    # Build meta (weight-free) model — no weights loaded into RAM
-    print("\nBuilding meta model (init_empty_weights) ...")
-    with init_empty_weights():
-        meta_model = AutoModelForCausalLM.from_config(config, attn_implementation="eager")
-
-    qeff_model_wf = QEFFAutoModelForCausalLM(
-        meta_model,
-        pretrained_model_name_or_path=args.model_name,
-    )
-
-    # Export
-    wf_profile_output = args.profile_output.parent / "export_memory_profile_weightfree.png"
-    profiler_wf = QEffMemoryProfiler(output_file=str(wf_profile_output), verbose=True)
-    profiler_wf.start_monitoring()
-    profiler_wf.mark_operation("Export")
-    export_start = time.perf_counter()
-    try:
-        onnx_path_wf = qeff_model_wf.export(
-            use_dynamo=args.use_dynamo,
-            use_onnx_subfunctions=args.use_onnx_subfunctions,
-            use_weight_free_export=True,
-            offload_pt_weights=False,
-        )
-    finally:
-        profiler_wf.stop_monitoring()
-
-    export_elapsed = time.perf_counter() - export_start
-    print(f"[WF-TIMING] export: {export_elapsed:.3f} seconds")
-    print(f"[WF-MEMORY] export peak RSS: {profiler_wf.peak_rss:.2f} MB")
-    print(f"[WF-ARTIFACT] onnx_path={onnx_path_wf}")
-    print(profiler_wf.get_memory_report())
-    profiler_wf.generate_memory_graph(str(wf_profile_output))
-    print(f"[WF-MEMORY] export profile graph saved to: {wf_profile_output}")
-
-    weight_spec_path = resolve_weight_spec_path(Path(onnx_path_wf))
-
-    # Copy FP32 checkpoint tensors locally so the QAIC compiler can find them
-    print("\n[WF] Converting checkpoint to local FP32 safetensors ...")
-    fp32_start = time.perf_counter()
-    _convert_checkpoint_to_fp32(Path(onnx_path_wf), weight_spec_path)
-    print(f"[WF-TIMING] fp32 convert: {time.perf_counter() - fp32_start:.3f} seconds")
-
-    # ORT inference — decode loop to generate tokens (not just one step of logits)
-    print("\n--- Weight-Free ORT inference ---")
-    session_wf = ort.InferenceSession(str(onnx_path_wf))
-    ort_inputs = load_weight_free_ort_inputs(weight_spec_path, runner.input_handler.prepare_ort_inputs())
-    ort_outputs = runner.run_ort_session(ort_inputs, session_wf)
-    ort_outputs = runner.input_handler.update_ort_outputs(ort_outputs)
-
-    wf_ort_ids = []
-    for _ in range(1, runner.gen_len):
-        wf_ort_ids.append(ort_outputs["logits"].argmax(-1).reshape(-1, 1))
-        ort_inputs = runner.input_handler.update_ort_inputs(ort_inputs, ort_outputs)
-        ort_inputs = load_weight_free_ort_inputs(weight_spec_path, ort_inputs)
-        ort_outputs = runner.run_ort_session(ort_inputs, session_wf)
-        ort_outputs = runner.input_handler.update_ort_outputs(ort_outputs)
-    wf_ort_ids.append(ort_outputs["logits"].argmax(-1).reshape(-1, 1))
-
-    import numpy as _np
-    wf_ort_tokens = _np.concatenate(wf_ort_ids, axis=1)
-    wf_ort_text = tokenizer.batch_decode(wf_ort_tokens, skip_special_tokens=True)
-    print(f"[WF-ORT] Completion: {wf_ort_text}")
-    print(f"[WF-ORT] token ids: {wf_ort_tokens}")
-
-    # Compile
-    print("\n--- Weight-Free Compile ---")
-    compile_start = time.perf_counter()
-    try:
-        qpc_path_wf = qeff_model_wf.compile(
-            onnx_path=str(onnx_path_wf),
-            prefill_seq_len=args.prompt_len,
-            ctx_len=args.ctx_len,
-            use_onnx_subfunctions=args.use_onnx_subfunctions,
-            use_dynamo=args.use_dynamo,
-            use_weight_free_export=True,
-        )
-        compile_elapsed = time.perf_counter() - compile_start
-        print(f"[WF-TIMING] compile: {compile_elapsed:.3f} seconds")
-        print(f"[WF-ARTIFACT] qpc_path={qpc_path_wf}")
-
-        # AIC inference
-        print("\n--- Weight-Free AIC inference ---")
-        try:
-            output_wf = qeff_model_wf.generate(
-                prompts=[args.prompt], tokenizer=tokenizer, automation=True
-            )
-            wf_aic_tokens = _to_1d_tensor(output_wf.generated_ids)
-            print(f"[WF-AIC] tokens: {output_wf.generated_ids}")
-        except RuntimeError as e:
-            print(f"[WF-AIC] Skipped: {e}")
-            wf_aic_tokens = None
-    except RuntimeError as e:
-        print(f"[WF-COMPILE] Failed: {e}")
-        wf_aic_tokens = None
-
-    # Compare weight-free ORT vs regular ORT
-    print("\n" + "=" * 60)
-    print("WEIGHT-FREE vs REGULAR COMPARISON")
-    print("=" * 60)
-    wf_ort_t = _to_1d_tensor(wf_ort_tokens)
-    reg_ort_t = _to_1d_tensor(ort_tokens)
-    min_len = min(wf_ort_t.numel(), reg_ort_t.numel())
-    match = torch.allclose(wf_ort_t[:min_len].float(), reg_ort_t[:min_len].float(), rtol=0, atol=0)
-    print(f"WF-ORT == Regular-ORT (first {min_len} tokens): {'✓ MATCH' if match else '✗ MISMATCH'}")
-    print(f"  Regular-ORT : {reg_ort_t[:min_len].tolist()}")
-    print(f"  WF-ORT      : {wf_ort_t[:min_len].tolist()}")
-
-
-def main() -> None:
-    args = _parse_args()
-    args.profile_output.parent.mkdir(parents=True, exist_ok=True)
-
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name)
-    config = AutoConfig.from_pretrained(args.model_name)
-    config.torch_dtype = torch.float32
-    print(config)
-
-    runner = ApiRunner(
-        batch_size=1,
-        tokenizer=tokenizer,
-        config=config,
-        prompt=[args.prompt],
-        prompt_len=args.prompt_len,
-        ctx_len=args.ctx_len,
-    )
-
-    # ── HF PyTorch inference ───────────────────────────────────────────────────
-    print("\n--- Original HF Model Outputs (Torch CPU) ---")
-    hf_model = AutoModelForCausalLM.from_pretrained(args.model_name, config=config)
-    hf_tokens = runner.run_hf_model_on_pytorch(hf_model)
-    print(hf_tokens)
-
-    # ── QEff PyTorch inference ─────────────────────────────────────────────────
-    qeff_model = QEFFAutoModelForCausalLM.from_pretrained(args.model_name, config=config)
-    print("\n--- QEff Transformed HF Model Outputs (Torch CPU) ---")
-    pt_tokens = runner.run_kv_model_on_pytorch(qeff_model.model)
-    print(pt_tokens)
-
-    # ── Regular export (dynamo + optional subfunctions) ────────────────────────
-    profiler = QEffMemoryProfiler(output_file=str(args.profile_output), verbose=True)
-    profiler.start_monitoring()
-    profiler.mark_operation("Export")
-    export_start = time.perf_counter()
-    try:
-        onnx_path = qeff_model.export(
-            use_dynamo=args.use_dynamo,
-            use_onnx_subfunctions=args.use_onnx_subfunctions,
-        )
-    finally:
-        profiler.stop_monitoring()
-
-    export_elapsed = time.perf_counter() - export_start
-    print(f"[TIMING] qeff_model.export: {export_elapsed:.3f} seconds")
-    print(f"[MEMORY] export peak RSS: {profiler.peak_rss:.2f} MB")
-    print(f"[ARTIFACT] onnx_path={onnx_path}")
-    print(profiler.get_memory_report())
-    profiler.generate_memory_graph(str(args.profile_output))
-    print(f"[MEMORY] export profile graph saved to: {args.profile_output}")
-
-    # ── ORT inference ──────────────────────────────────────────────────────────
-    print("\n--- QEff Transformed Onnx Model Outputs (OnnxRuntime CPU) ---")
-    ort_tokens = runner.run_kv_model_on_ort(onnx_path)
-    print(ort_tokens)
-
-    # ── Compile ────────────────────────────────────────────────────────────────
-    compile_start = time.perf_counter()
-    qpc_path = qeff_model.compile(
-        prefill_seq_len=args.prompt_len,
-        ctx_len=args.ctx_len,
-        use_onnx_subfunctions=args.use_onnx_subfunctions,
-        use_dynamo=args.use_dynamo,
-    )
-    compile_elapsed = time.perf_counter() - compile_start
-    print(f"[TIMING] qeff_model.compile: {compile_elapsed:.3f} seconds")
-    print(f"[ARTIFACT] qpc_path={qpc_path}")
-    print("compile done")
-
-    # ── AIC inference ──────────────────────────────────────────────────────────
-    print("QEff Transformed Onnx Model Outputs(AIC Backend)")
-    aic_t = None
-    try:
-        output = qeff_model.generate(prompts=[args.prompt], tokenizer=tokenizer, automation=True)
-        print(output)
-        print(output.generated_ids)
-        aic_t = _to_1d_tensor(output.generated_ids)
-    except RuntimeError as e:
-        print(f"[AIC] Skipped (no hardware): {e}")
-
-    # ── Compare regular outputs ────────────────────────────────────────────────
-    hf_t   = _to_1d_tensor(hf_tokens)
-    pt_t   = _to_1d_tensor(pt_tokens)
-    ort_t  = _to_1d_tensor(ort_tokens)
-
-    lengths = {
-        "hf_tokens": hf_t.numel(),
-        "pt_tokens": pt_t.numel(),
-        "ort_tokens": ort_t.numel(),
-    }
-    if aic_t is not None:
-        lengths["aic_generated_ids"] = aic_t.numel()
-    min_len = min(lengths.values()) if lengths else 0
-    print(f"[COMPARE] original lengths: {lengths}")
-
-    if min_len == 0:
-        print("[COMPARE] Cannot compare tokens because at least one output is empty.")
-    else:
-        hf_trim  = hf_t[:min_len]
-        pt_trim  = pt_t[:min_len]
-        ort_trim = ort_t[:min_len]
-
-        hf_pt_match  = torch.allclose(hf_trim.float(), pt_trim.float(),  rtol=0.0, atol=0.0)
-        hf_ort_match = torch.allclose(hf_trim.float(), ort_trim.float(), rtol=0.0, atol=0.0)
-
-        print(f"[COMPARE] trimmed length used: {min_len}")
-        print("[COMPARE] trimmed outputs together:")
-        print(f"  hf_tokens:  {hf_trim.tolist()}")
-        print(f"  pt_tokens:  {pt_trim.tolist()}")
-        print(f"  ort_tokens: {ort_trim.tolist()}")
-
-        if aic_t is not None:
-            aic_trim = aic_t[:min_len]
-            hf_aic_match = torch.allclose(hf_trim.float(), aic_trim.float(), rtol=0.0, atol=0.0)
-            all_match = hf_pt_match and hf_ort_match and hf_aic_match
-            print(f"  aic_tokens: {aic_trim.tolist()}")
-        else:
-            all_match = hf_pt_match and hf_ort_match
-
-        if all_match:
-            print("[COMPARE] All outputs match.")
-        else:
-            print("[COMPARE] Outputs do NOT match.")
-
-    # ── Weight-free flow (optional) ────────────────────────────────────────────
-    if args.use_weight_free:
-        _run_weight_free_flow(args, runner, qeff_model, hf_tokens, pt_tokens, ort_tokens)
-
-
-if __name__ == "__main__":
-    main()
+============================================================
+WEIGHT-FREE vs REGULAR COMPARISON
+============================================================
+WF-ORT == Regular-ORT (first 24 tokens): ✓ MATCH
+  Regular-ORT : [22433, 8923, 8923, 8923, 8923, 8923, 8923, 22214, 22214, 22214, 22214, 22214, 22214, 22214, 22214, 152900, 152900, 152900, 103907, 103907, 22214, 103907, 22214, 103907]
+  WF-ORT      : [22433, 8923, 8923, 8923, 8923, 8923, 8923, 22214, 22214, 22214, 22214, 22214, 22214, 22214, 22214, 152900, 152900, 152900, 103907, 103907, 22214, 103907, 22214, 103907]
