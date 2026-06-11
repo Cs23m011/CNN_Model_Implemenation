@@ -229,3 +229,11 @@ else:
     save_file(fp32_tensors, str(export_dir / out_name))
     new_files.append(ExternalDataFile(path=out_name, format="safetensors"))
     print(f"  {abs_path.name}  ({len(keys_needed)}/{len(tensors)} tensors)  ->  {out_name}  (float32)")
+[TIMING] download model-00001-of-00282.safetensors: 98.3s  (5095 MB)
+[1/282] model-00001-of-00282.safetensors → base-model-00001-of-00282.safetensors (35 base tensors, 10191 MB written, 0 layer(s) stacked, 0 in-flight)  proc: 6.8s
+model-00002-of-00282.safetensors: 100%|████████████████████████████████████████████████████████████████| 5.35G/5.35G [01:57<00:00, 45.5MB/s]
+[TIMING] download model-00002-of-00282.safetensors: 117.8s  (5104 MB)
+[2/282] model-00002-of-00282.safetensors → base-model-00002-of-00282.safetensors (2 base tensors, 128 MB written, 0 layer(s) stacked, 1 in-flight)  proc: 8.2s
+model-00003-of-00282.safetensors: 100%|████████████████████████████████████████████████████████████████| 5.36G/5.36G [01:34<00:00, 56.9MB/s]
+[TIMING] download model-00003-of-00282.safetensors: 94.5s  (5112 MB)
+[3/282] model-00003-of-00282.safetensors → base-model-00003-of-00282.safetensors (0 base tensors, 0 MB written, 0 layer(s) stacked, 1 in-flight)  proc: 7.5s
